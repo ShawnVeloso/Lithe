@@ -1,0 +1,44 @@
+# ==========================
+# Lithe — .gitignore
+# ==========================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# --- Environment & Secrets ---
+.env
+.env.local
+
+# --- Node / Electron ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Electron Build Artifacts ---
+out/
+release/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# --- SQLite ---
+*.db
+*.db-journal

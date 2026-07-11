@@ -1,0 +1,9 @@
+# ==========================
+# Lithe — Python Dependencies
+# ==========================
+# Minimal footprint per AGENT_PLAYBOOK.md §1.
+
+google-genai>=1.0.0
+python-dotenv>=1.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
