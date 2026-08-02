@@ -24,6 +24,7 @@ from src.backend.prompts.system_prompt import (
 )
 from src.backend.retrieval import get_file_contexts
 from src.backend.tools import execute_rename, execute_delete
+from src.backend.memory import search_files_by_name
 
 # ---------------------------------------------------------------------------
 # Gemini client (initialized once at module load)
@@ -72,10 +73,27 @@ def chat(user_message: str) -> str:
         """
         return execute_delete(path, safeword_active)
 
-    tools = [rename_file, delete_file]
+    def search_files(keyword: str) -> str:
+        """Searches the local file index for files matching a keyword.
+        Use this when the user asks to find, locate, or look for a file
+        by name, even if they don't know the exact filename or extension.
+        Args:
+            keyword: A partial filename or keyword to search for.
+        """
+        results = search_files_by_name(keyword)
+        if not results:
+            return f"No files found matching '{keyword}' in the indexed directories."
+        lines = []
+        for r in results:
+            size_kb = round(r['size_bytes'] / 1024, 1)
+            lines.append(f"  {r['name']} ({size_kb} KB) — {r['path']}")
+        return f"Found {len(results)} file(s) matching '{keyword}':\n" + "\n".join(lines)
+
+    tools = [rename_file, delete_file, search_files]
     tool_map = {
         "rename_file": rename_file,
         "delete_file": delete_file,
+        "search_files": search_files,
     }
 
     config = types.GenerateContentConfig(
@@ -83,7 +101,6 @@ def chat(user_message: str) -> str:
         temperature=0.7,
         max_output_tokens=2048,
         tools=tools,
-        http_options={'timeout': 10.0}
     )
 
     # --- Initialize conversation history for this request ---

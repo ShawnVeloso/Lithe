@@ -92,5 +92,35 @@ def find_file_paths(filenames: List[str]) -> List[str]:
         rows = cursor.fetchall()
         return [row["path"] for row in rows]
 
+
+def search_files_by_name(keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """
+    Searches indexed files by keyword (fuzzy match on filename).
+    Returns up to `limit` results with path, name, extension, and size.
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT path, name, extension, size_bytes
+            FROM files
+            WHERE name LIKE ? COLLATE NOCASE
+            ORDER BY modified_at DESC
+            LIMIT ?
+            """,
+            (f"%{keyword}%", limit),
+        )
+        rows = cursor.fetchall()
+        return [
+            {
+                "path": row["path"],
+                "name": row["name"],
+                "extension": row["extension"],
+                "size_bytes": row["size_bytes"],
+            }
+            for row in rows
+        ]
+
+
 # Ensure DB is initialized when this module is imported
 init_db()

@@ -1,7 +1,7 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-07-11T23:51 (PHT)
+> **Last Updated:** 2026-08-03T02:10 (PHT)
 
 ---
 
@@ -121,5 +121,9 @@ Lithe is now a fully functional, permissioned local desktop assistant capable of
 | 2026-07-11 | Antigravity | Created `docs/agent-logs/INDEX.md` |
 | 2026-07-12 | Antigravity | Implemented F-03 (Local Directory Indexer) |
 | 2026-07-12 | Antigravity | Implemented F-04 (RAG & File Context) |
-| 2026-07-12 | Antigravity | Implemented F-05 (Basic Task Execution) |
+| 2026-08-03 | Antigravity | Updated outdated documentation states |
+| 2026-08-03 | Antigravity | Implemented Customization Rules for AI Agents (.agents/AGENTS.md) |
+| 2026-08-03 | Antigravity | Fixed Gemini timeout — removed broken custom http_options from GenerateContentConfig; SDK defaults work correctly |
+| 2026-08-03 | Antigravity | Added auto-indexing on server startup in server.py — no more manual POST /api/index needed |
+| 2026-08-03 | Antigravity | Added search_files LLM tool (memory.py + brain.py) — fuzzy file search by keyword via function calling |
 

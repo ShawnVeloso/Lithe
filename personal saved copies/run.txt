@@ -1,0 +1,2 @@
+cd d:\Lithe\src\frontend
+npm run dev

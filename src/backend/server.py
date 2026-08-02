@@ -13,6 +13,8 @@ Run:
     python -m src.backend.server
 """
 
+import threading
+
 import uvicorn
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +27,14 @@ from src.backend.indexer import walk_and_index
 # FastAPI app
 # ---------------------------------------------------------------------------
 app = FastAPI(title="Lithe Backend", version="0.1.0")
+
+
+@app.on_event("startup")
+def auto_index_on_startup():
+    """Automatically index whitelisted directories when the server boots."""
+    print("[Lithe] Auto-indexing whitelisted directories in the background...")
+    thread = threading.Thread(target=walk_and_index, daemon=True)
+    thread.start()
 
 app.add_middleware(
     CORSMiddleware,
