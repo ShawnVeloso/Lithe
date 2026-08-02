@@ -10,12 +10,12 @@
 
 | ID | Feature | Category | Status |
 |---|---|---|---|
-| F-01 | Core LLM Connection (The Brain) | Backend | 🔲 Planned |
-| F-02 | Minimal Chat Interface (The Face) | Frontend | 🔲 Planned |
-| F-03 | Local Directory Indexer (The Memory) | Backend | 🔲 Planned |
-| F-04 | RAG & File Context (Second Brain) | Backend | 🔲 Planned |
-| F-05 | Basic Task Execution (The Hands) | Tooling | 🔲 Planned |
-| F-06 | Candid Persona & Safeword | Backend | 🔲 Planned |
+| F-01 | Core LLM Connection (The Brain) | Backend | ✅ Complete |
+| F-02 | Minimal Chat Interface (The Face) | Frontend | ✅ Complete |
+| F-03 | Local Directory Indexer (The Memory) | Backend | ✅ Complete |
+| F-04 | RAG & File Context (Second Brain) | Backend | ✅ Complete |
+| F-05 | Basic Task Execution (The Hands) | Tooling | ✅ Complete |
+| F-06 | Candid Persona & Safeword | Backend | ✅ Complete |
 
 ---
 
