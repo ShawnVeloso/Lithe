@@ -36,4 +36,18 @@ if not GEMINI_API_KEY:
 # ---------------------------------------------------------------------------
 # Model configuration
 # ---------------------------------------------------------------------------
-GEMINI_MODEL: str = "gemini-2.5-flash"
+GEMINI_MODEL: str = "gemini-3.6-flash"
+
+# ---------------------------------------------------------------------------
+# F-03: Memory & Indexer configuration
+# ---------------------------------------------------------------------------
+_LITHE_DIR = _PROJECT_ROOT / ".lithe"
+_LITHE_DIR.mkdir(exist_ok=True)
+
+DB_PATH: Path = _LITHE_DIR / "lithe_memory.db"
+
+# Parse the comma-separated whitelist from .env
+_raw_whitelist = os.getenv("INDEX_WHITELIST", "")
+INDEX_WHITELIST: list[str] = [
+    path.strip() for path in _raw_whitelist.split(",") if path.strip()
+]
