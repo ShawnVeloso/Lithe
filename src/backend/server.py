@@ -14,11 +14,12 @@ Run:
 """
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.backend.brain import chat
+from src.backend.indexer import walk_and_index
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -65,6 +66,13 @@ async def chat_endpoint(request: ChatRequest):
     """
     result = chat(request.message)
     return ChatResponse(response=result)
+
+
+@app.post("/api/index")
+async def index_endpoint(background_tasks: BackgroundTasks):
+    """Trigger the local directory indexer in the background."""
+    background_tasks.add_task(walk_and_index)
+    return {"status": "indexing_started"}
 
 
 # ---------------------------------------------------------------------------

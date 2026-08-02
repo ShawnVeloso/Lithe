@@ -43,3 +43,9 @@ Before you consider a task complete, verify:
 - [ ] You have not broken the boundary between the Electron frontend and the Python backend.
 - [ ] Any new environment variables are documented.
 - [ ] Code runs successfully on a Windows environment (the user's OS).
+
+## 5. Agent Logging & Handoff (CRITICAL)
+To maintain project continuity, you must document your progress before concluding any session.
+* **The Log Directory:** Maintain an `agent-logs/` directory inside the `docs/` folder.
+* **The Index:** You must update `docs/agent-logs/INDEX.md` with a high-level summary of what was just built, the specific files that were modified, and the exact next steps to be worked on.
+* **Read First:** At the start of every new conversation or task, you must read `INDEX.md` to establish the current state of the project before writing any code.
