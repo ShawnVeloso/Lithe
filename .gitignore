@@ -45,3 +45,12 @@ Desktop.ini
 
 # --- Lithe Specific ---
 .lithe/
+pyinstaller-build/
+src/frontend/resources/python-backend/
+*.spec
+
+# --- github stops me from pushing the exe because it is above 100mb ---
+*.exe
+dist/
+build/ 
+

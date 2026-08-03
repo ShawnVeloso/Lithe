@@ -29,3 +29,10 @@ To prevent system crashes and endless scanning, Lithe will **not** blindly read 
 * **Whitelisted Directories:** The user configures specific roots (e.g., `C:\Users\Name\Documents\DataScience` and `D:\Projects`).
 * **Background Crawler:** A Python script periodically hashes and indexes these directories into the local SQLite database.
 * **Agent Access:** When the AI needs a file, it queries the SQLite index first, retrieving the exact path before attempting to open the file.
+
+## 5. Packaging & Distribution
+Lithe is packaged as a standalone Windows application (`.exe`) using a two-step build process:
+1. **PyInstaller**: Compiles the Python backend and all dependencies (including FastAPI and Google GenAI) into a self-contained executable folder.
+2. **electron-builder**: Packages the Electron frontend, embeds the PyInstaller backend as `extraResources`, and generates an NSIS installer. 
+
+In production, the Electron main process spawns the bundled PyInstaller backend (`lithe-server.exe`) instead of relying on a system Python installation. Configuration variables (`.env` and the SQLite database) are loaded from the user's AppData directory (`%APPDATA%\Lithe`) to ensure persistence and proper permissions without requiring admin rights.
