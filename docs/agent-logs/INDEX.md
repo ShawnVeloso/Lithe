@@ -1,7 +1,7 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-03T02:10 (PHT)
+> **Last Updated:** 2026-08-03T22:52 (PHT)
 
 ---
 
@@ -106,7 +106,7 @@ Lithe is now a fully functional, permissioned local desktop assistant capable of
 5. Executing system tasks (rename, delete) via function calling (F-05).
 6. Enforcing a candid persona and strict safeword-gated permission protocols (F-06).
 
-**Next Step:** Full end-to-end user acceptance testing with a valid `GEMINI_API_KEY`.
+**Next Step:** Verify the installer works across different Windows environments and consider setting up an auto-updater.
 
 ---
 
@@ -126,4 +126,6 @@ Lithe is now a fully functional, permissioned local desktop assistant capable of
 | 2026-08-03 | Antigravity | Fixed Gemini timeout — removed broken custom http_options from GenerateContentConfig; SDK defaults work correctly |
 | 2026-08-03 | Antigravity | Added auto-indexing on server startup in server.py — no more manual POST /api/index needed |
 | 2026-08-03 | Antigravity | Added search_files LLM tool (memory.py + brain.py) — fuzzy file search by keyword via function calling |
+| 2026-08-03 | Antigravity | Packaged Lithe as a standalone Windows desktop app using PyInstaller and electron-builder (F-07) |
+| 2026-08-03 | Antigravity | Generated a comprehensive feature rundown document in `personal saved copies/Lithe_Features.md` |
 

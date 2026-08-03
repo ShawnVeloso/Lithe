@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, ChildProcess } from 'child_process'
+import { existsSync } from 'fs'
 
 // ---------------------------------------------------------------------------
 // Python server management
@@ -11,15 +12,42 @@ const PYTHON_SERVER_URL = `http://127.0.0.1:${PYTHON_SERVER_PORT}`
 
 let pythonProcess: ChildProcess | null = null
 
+/**
+ * Resolves the path to the Python backend executable or script.
+ *
+ * In production (packaged): uses the bundled lithe-server.exe from extraResources.
+ * In development: uses `python -m src.backend.server` from the project root.
+ */
 function startPythonServer(): void {
-  // Resolve the project root (3 levels up from src/frontend/out/main)
-  const projectRoot = join(__dirname, '..', '..', '..', '..')
+  if (is.dev) {
+    // --- Development mode: run Python directly ---
+    // Resolve the project root (3 levels up from src/frontend/out/main)
+    const projectRoot = join(__dirname, '..', '..', '..', '..')
 
-  pythonProcess = spawn('python', ['-m', 'src.backend.server'], {
-    cwd: projectRoot,
-    stdio: 'pipe',
-    env: { ...process.env }
-  })
+    pythonProcess = spawn('python', ['-m', 'src.backend.server'], {
+      cwd: projectRoot,
+      stdio: 'pipe',
+      env: { ...process.env }
+    })
+  } else {
+    // --- Production mode: spawn the bundled PyInstaller executable ---
+    // extraResources are placed at: <app>/resources/python-backend/
+    const resourcesPath = join(process.resourcesPath, 'python-backend')
+    const serverExe = join(resourcesPath, 'lithe-server.exe')
+
+    if (!existsSync(serverExe)) {
+      process.stderr.write(
+        `[Lithe] ERROR: Python backend not found at: ${serverExe}\n`
+      )
+      return
+    }
+
+    pythonProcess = spawn(serverExe, [], {
+      cwd: resourcesPath,
+      stdio: 'pipe',
+      env: { ...process.env }
+    })
+  }
 
   pythonProcess.stdout?.on('data', (data: Buffer) => {
     const msg = data.toString().trim()
@@ -43,7 +71,7 @@ function stopPythonServer(): void {
   }
 }
 
-async function waitForPythonServer(maxRetries = 20, delayMs = 500): Promise<boolean> {
+async function waitForPythonServer(maxRetries = 30, delayMs = 500): Promise<boolean> {
   for (let i = 0; i < maxRetries; i++) {
     try {
       const response = await fetch(`${PYTHON_SERVER_URL}/api/health`)
@@ -60,12 +88,18 @@ async function waitForPythonServer(maxRetries = 20, delayMs = 500): Promise<bool
 // Window creation
 // ---------------------------------------------------------------------------
 function createWindow(): BrowserWindow {
+  // Resolve icon path (works in both dev and production)
+  const iconPath = is.dev
+    ? join(__dirname, '..', '..', '..', '..', 'build', 'icon.ico')
+    : join(process.resourcesPath, 'icon.ico')
+
   const mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
     resizable: false,
     title: 'Lithe',
     backgroundColor: '#0a0e1a',
+    icon: iconPath,
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -132,3 +166,4 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   stopPythonServer()
 })
+
