@@ -154,7 +154,8 @@ def chat(user_message: str) -> str:
         lines = []
         for r in results:
             size_kb = round(r['size_bytes'] / 1024, 1)
-            lines.append(f"  {r['name']} ({size_kb} KB) — {r['path']}")
+            cat = f" [{r['category']}]" if r.get('category') else ""
+            lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
         return f"Found {len(results)} file(s) matching '{keyword}':\n" + "\n".join(lines)
 
     tools = [rename_file, delete_file, search_files]

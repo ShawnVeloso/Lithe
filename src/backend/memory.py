@@ -3,6 +3,11 @@ Lithe — Memory Layer (F-03: Local Directory Indexer)
 
 Initializes and manages the local SQLite database used to store file metadata.
 This acts as Lithe's "Memory" of the local file system.
+
+Phase 3 additions:
+  - `category` column for heuristic tags (The Heuristic Graph)
+  - `delete_file_by_path()` for the file watcher's delete events
+  - Schema migration for existing databases
 """
 
 import sqlite3
@@ -26,7 +31,11 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Initializes the database schema if it doesn't exist."""
+    """Initializes the database schema if it doesn't exist.
+
+    Also runs migrations for existing databases (e.g., adding the
+    `category` column introduced in Phase 3).
+    """
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -38,10 +47,19 @@ def init_db() -> None:
                 extension TEXT,
                 size_bytes INTEGER,
                 modified_at REAL,
-                indexed_at REAL
+                indexed_at REAL,
+                category TEXT DEFAULT ''
             )
             """
         )
+
+        # --- Migration: add `category` column to existing databases ---
+        existing_cols = [
+            col[1] for col in cursor.execute("PRAGMA table_info(files)").fetchall()
+        ]
+        if "category" not in existing_cols:
+            cursor.execute("ALTER TABLE files ADD COLUMN category TEXT DEFAULT ''")
+
         # Create an index on extension for faster filtering of research files
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_files_extension ON files(extension)"
@@ -56,7 +74,7 @@ def upsert_files(files: List[Dict[str, Any]]) -> None:
     Args:
         files: A list of dictionaries containing file metadata.
                Keys should match the table columns:
-               path, name, extension, size_bytes, modified_at, indexed_at
+               path, name, extension, size_bytes, modified_at, indexed_at, category
     """
     if not files:
         return
@@ -65,17 +83,29 @@ def upsert_files(files: List[Dict[str, Any]]) -> None:
         cursor = conn.cursor()
         cursor.executemany(
             """
-            INSERT INTO files (path, name, extension, size_bytes, modified_at, indexed_at)
-            VALUES (:path, :name, :extension, :size_bytes, :modified_at, :indexed_at)
+            INSERT INTO files (path, name, extension, size_bytes, modified_at, indexed_at, category)
+            VALUES (:path, :name, :extension, :size_bytes, :modified_at, :indexed_at, :category)
             ON CONFLICT(path) DO UPDATE SET
                 name=excluded.name,
                 extension=excluded.extension,
                 size_bytes=excluded.size_bytes,
                 modified_at=excluded.modified_at,
-                indexed_at=excluded.indexed_at
+                indexed_at=excluded.indexed_at,
+                category=excluded.category
             """,
             files,
         )
+        conn.commit()
+
+
+def delete_file_by_path(path: str) -> None:
+    """Removes a file record from the database by its absolute path.
+
+    Called by the file watcher when a file is deleted from the filesystem.
+    No-op if the path doesn't exist in the database.
+    """
+    with get_connection() as conn:
+        conn.execute("DELETE FROM files WHERE path = ?", (path,))
         conn.commit()
 
 
@@ -103,13 +133,13 @@ def find_file_paths(filenames: List[str]) -> List[str]:
 def search_files_by_name(keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
     """
     Searches indexed files by keyword (fuzzy match on filename).
-    Returns up to `limit` results with path, name, extension, and size.
+    Returns up to `limit` results with path, name, extension, size, and category.
     """
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT path, name, extension, size_bytes
+            SELECT path, name, extension, size_bytes, category
             FROM files
             WHERE name LIKE ? COLLATE NOCASE
             ORDER BY modified_at DESC
@@ -124,6 +154,7 @@ def search_files_by_name(keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
                 "name": row["name"],
                 "extension": row["extension"],
                 "size_bytes": row["size_bytes"],
+                "category": row["category"] or "",
             }
             for row in rows
         ]
