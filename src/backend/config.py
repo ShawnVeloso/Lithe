@@ -70,6 +70,16 @@ if not GEMINI_API_KEY:
 GEMINI_MODEL: str = "gemini-3.6-flash"
 
 # ---------------------------------------------------------------------------
+# Ollama fallback configuration (Phase 2: Reliability)
+# ---------------------------------------------------------------------------
+# When the Gemini API is unreachable (network drop, rate limit, API error),
+# Lithe falls back to a local Ollama model. These values are configurable
+# via .env so users can point to different models or remote Ollama instances.
+OLLAMA_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3")
+OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "60"))
+
+# ---------------------------------------------------------------------------
 # F-03: Memory & Indexer configuration
 # ---------------------------------------------------------------------------
 # In packaged mode, store the SQLite DB in %APPDATA%/Lithe/

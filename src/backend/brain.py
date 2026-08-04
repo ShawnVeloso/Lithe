@@ -6,17 +6,21 @@ This module is the primary interface to the Gemini LLM. It:
   2. Detects the safeword to toggle between candid and compliant personas.
   3. Sends the user's message with the appropriate system prompt.
   4. Handles function calling (tools) and multi-turn execution within a single request.
-  5. Returns the model's text response.
+  5. Falls back to a local Ollama model when Gemini is unreachable (Phase 2).
+  6. Returns the model's text response.
 """
-
-import json
-import urllib.request
 
 import httpx
 from google import genai
 from google.genai import types, errors
 
-from src.backend.config import GEMINI_API_KEY, GEMINI_MODEL
+from src.backend.config import (
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    OLLAMA_URL,
+    OLLAMA_MODEL,
+    OLLAMA_TIMEOUT,
+)
 from src.backend.prompts.system_prompt import (
     CANDID_SYSTEM_PROMPT,
     COMPLIANT_SYSTEM_PROMPT,
@@ -30,6 +34,70 @@ from src.backend.memory import search_files_by_name
 # Gemini client (initialized once at module load)
 # ---------------------------------------------------------------------------
 _client = genai.Client(api_key=GEMINI_API_KEY)
+
+
+# ---------------------------------------------------------------------------
+# Ollama fallback (Phase 2: Reliability)
+# ---------------------------------------------------------------------------
+def _check_ollama_available() -> bool:
+    """Quick health check — returns True if Ollama is reachable."""
+    try:
+        resp = httpx.get(f"{OLLAMA_URL}/api/tags", timeout=5)
+        return resp.status_code == 200
+    except (httpx.ConnectError, httpx.TimeoutException, Exception):
+        return False
+
+
+def _ollama_chat(system_prompt: str, user_message: str) -> str:
+    """Send a prompt to the local Ollama instance and return its response.
+
+    Uses the /api/chat endpoint with proper message roles so Ollama
+    receives the system prompt as a first-class instruction, not
+    concatenated into the user message.
+
+    Args:
+        system_prompt: The system instruction (candid or compliant).
+        user_message:  The cleaned user message (with file context injected).
+
+    Returns:
+        The model's text response, or a descriptive error string.
+    """
+    if not _check_ollama_available():
+        return (
+            "Error: Both Gemini and Ollama are unavailable. "
+            "Gemini failed (see above), and Ollama is not running at "
+            f"{OLLAMA_URL}. Start Ollama with `ollama serve` and ensure "
+            f"the '{OLLAMA_MODEL}' model is pulled (`ollama pull {OLLAMA_MODEL}`)."
+        )
+
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        "stream": False,
+    }
+
+    try:
+        resp = httpx.post(
+            f"{OLLAMA_URL}/api/chat",
+            json=payload,
+            timeout=OLLAMA_TIMEOUT,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data.get("message", {}).get("content", "")
+        if not content:
+            return "Error: Ollama returned an empty response."
+        return content
+    except httpx.TimeoutException:
+        return (
+            f"Error: Ollama request timed out after {OLLAMA_TIMEOUT}s. "
+            "The model may be loading or the machine is under heavy load."
+        )
+    except Exception as e:
+        return f"Error: Ollama fallback failed — {type(e).__name__}: {e}"
 
 
 def chat(user_message: str) -> str:
@@ -130,6 +198,8 @@ def chat(user_message: str) -> str:
                 if call.name in tool_map:
                     try:
                         result = tool_map[call.name](**call.args)
+                    except TypeError as e:
+                        result = f"Argument Error: {e}"
                     except Exception as e:
                         result = f"Python Execution Error: {e}"
                 else:
@@ -163,29 +233,8 @@ def chat(user_message: str) -> str:
     except (errors.APIError, httpx.TimeoutException, Exception) as e:
         error_name = type(e).__name__
         print(f"[Lithe] Gemini connection failed ({error_name}): {e}")
-        print("[Lithe] Routing prompt to local Ollama fallback...")
-        
-        # We need to send the system prompt + user message
-        full_prompt = f"System:\n{system_prompt}\n\nUser:\n{cleaned_message}"
-        
-        url = "http://localhost:11434/api/generate"
-        data = {
-            "model": "llama3",
-            "prompt": full_prompt,
-            "stream": False
-        }
-        
-        try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(data).encode('utf-8'),
-                headers={'Content-Type': 'application/json'}
-            )
-            with urllib.request.urlopen(req, timeout=30) as res:
-                result = json.loads(res.read().decode('utf-8'))
-                return result.get("response", "Error: No response from Ollama fallback.")
-        except Exception as ollama_err:
-            return f"Error: Both Gemini and Ollama fallback failed. (Gemini: {e} | Ollama: {ollama_err})"
+        print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
+        return _ollama_chat(system_prompt, cleaned_message)
 
 
 # ---------------------------------------------------------------------------
