@@ -5,10 +5,70 @@ Provides system-level functions (rename, delete) to the Gemini LLM.
 Enforces the safeword permission requirement: if the safeword is not
 active, these functions immediately return a permission error instructing
 the LLM to ask the user for authorization.
+
+Safety features (Phase 1 — Circuit Breakers):
+  - Path validation: rejects empty, null-byte, and protected system paths.
+  - Timeout wrapper: all OS operations run inside a 30-second hard timeout
+    via concurrent.futures to prevent hung filesystem calls.
 """
 
 import os
+import concurrent.futures
 
+# ---------------------------------------------------------------------------
+# Circuit Breaker configuration
+# ---------------------------------------------------------------------------
+
+# Hard timeout for any single tool operation (seconds)
+TOOL_TIMEOUT_SECONDS = 30
+
+# Directories that tools must NEVER modify
+PROTECTED_PATHS = [
+    os.path.normcase(r"C:\Windows"),
+    os.path.normcase(r"C:\Program Files"),
+    os.path.normcase(r"C:\Program Files (x86)"),
+    os.path.normcase(os.path.join(os.environ.get("SYSTEMROOT", r"C:\Windows"), "")),
+]
+
+
+def _validate_path(path: str, label: str = "path") -> str | None:
+    """Validates and normalizes a file path.
+
+    Returns:
+        An error string if the path is invalid, or None if it's safe.
+    """
+    if not path or not path.strip():
+        return f"ERROR: {label} is empty."
+    if "\x00" in path:
+        return f"ERROR: {label} contains invalid null bytes."
+
+    real = os.path.normcase(os.path.realpath(path))
+    for protected in PROTECTED_PATHS:
+        if real.startswith(protected):
+            return f"ERROR: Refusing to modify protected system path: {path}"
+    return None
+
+
+def _run_with_timeout(fn, *args):
+    """Runs a callable with a hard timeout.
+
+    Returns:
+        The function's return value, or an error string on timeout.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(fn, *args)
+        try:
+            return future.result(timeout=TOOL_TIMEOUT_SECONDS)
+        except concurrent.futures.TimeoutError:
+            return (
+                f"ERROR: Operation timed out after {TOOL_TIMEOUT_SECONDS} seconds. "
+                "The target path may be on a network drive or locked by another process."
+            )
+
+
+# ---------------------------------------------------------------------------
+# Tool functions (exposed to the LLM via function calling)
+# ---------------------------------------------------------------------------
 
 def execute_rename(source: str, destination: str, safeword_active: bool) -> str:
     """
@@ -21,12 +81,23 @@ def execute_rename(source: str, destination: str, safeword_active: bool) -> str:
             "their request and include the safeword 'Override Lithe'."
         )
 
+    # --- Circuit Breaker: validate arguments ---
+    src_err = _validate_path(source, "source")
+    if src_err:
+        return src_err
+    dst_err = _validate_path(destination, "destination")
+    if dst_err:
+        return dst_err
+
     if not os.path.exists(source):
         return f"ERROR: Source path '{source}' does not exist."
 
-    try:
+    def _do_rename():
         os.rename(source, destination)
         return f"SUCCESS: Renamed/moved '{source}' to '{destination}'."
+
+    try:
+        return _run_with_timeout(_do_rename)
     except Exception as e:
         return f"ERROR: Failed to rename file: {str(e)}"
 
@@ -42,15 +113,23 @@ def execute_delete(path: str, safeword_active: bool) -> str:
             "their request and include the safeword 'Override Lithe'."
         )
 
+    # --- Circuit Breaker: validate arguments ---
+    path_err = _validate_path(path, "path")
+    if path_err:
+        return path_err
+
     if not os.path.exists(path):
         return f"ERROR: Path '{path}' does not exist."
 
-    try:
+    def _do_delete():
         if os.path.isdir(path):
             os.rmdir(path)
             return f"SUCCESS: Deleted directory '{path}'."
         else:
             os.remove(path)
             return f"SUCCESS: Deleted file '{path}'."
+
+    try:
+        return _run_with_timeout(_do_delete)
     except Exception as e:
         return f"ERROR: Failed to delete path: {str(e)}"

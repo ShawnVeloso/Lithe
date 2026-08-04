@@ -1,7 +1,7 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-03T22:52 (PHT)
+> **Last Updated:** 2026-08-04T14:13 (PHT)
 
 ---
 
@@ -86,7 +86,10 @@ User → ChatInput → App.tsx state → window.litheAPI.chat()
 | Variable | Source | Value |
 |----------|--------|-------|
 | `GEMINI_API_KEY` | `.env` file | User-provided |
-| `GEMINI_MODEL` | `config.py` | `gemini-2.5-flash` |
+| `GEMINI_MODEL` | `config.py` | `gemini-3.6-flash` |
+| `OLLAMA_URL` | `.env` / default | `http://localhost:11434` |
+| `OLLAMA_MODEL` | `.env` / default | `llama3` |
+| `OLLAMA_TIMEOUT` | `.env` / default | `60` seconds |
 | `SAFEWORD` | `system_prompt.py` | `"Override Lithe"` |
 | Python server port | `server.py` | `8321` |
 | Electron window | `main/index.ts` | 1000×700, non-resizable |
@@ -106,7 +109,7 @@ Lithe is now a fully functional, permissioned local desktop assistant capable of
 5. Executing system tasks (rename, delete) via function calling (F-05).
 6. Enforcing a candid persona and strict safeword-gated permission protocols (F-06).
 
-**Next Step:** Verify the installer works across different Windows environments and consider setting up an auto-updater.
+**Next Step:** Proceed with UPGRADE_PLAN Phase 3 — Event-Driven Memory (watchdog file watcher) and The Heuristic Graph.
 
 ---
 
@@ -128,4 +131,9 @@ Lithe is now a fully functional, permissioned local desktop assistant capable of
 | 2026-08-03 | Antigravity | Added search_files LLM tool (memory.py + brain.py) — fuzzy file search by keyword via function calling |
 | 2026-08-03 | Antigravity | Packaged Lithe as a standalone Windows desktop app using PyInstaller and electron-builder (F-07) |
 | 2026-08-03 | Antigravity | Generated a comprehensive feature rundown document in `personal saved copies/Lithe_Features.md` |
+| 2026-08-04 | Antigravity | **UPGRADE Phase 1.1:** Enabled SQLite WAL mode + busy_timeout in `memory.py` — prevents "database is locked" errors from concurrent indexer/LLM access |
+| 2026-08-04 | Antigravity | **UPGRADE Phase 1.2:** Added circuit breakers to `tools.py` — path validation (empty, null bytes, protected system dirs), path normalization (`realpath`), and 30-second timeout wrapper via `concurrent.futures` |
+| 2026-08-04 | Antigravity | Minor: Added `TypeError` catch in `brain.py` function calling handler for malformed LLM arguments |
+| 2026-08-04 | Antigravity | **UPGRADE Phase 2:** Refactored Ollama fallback in `brain.py` — dedicated `_ollama_chat()` function, `_check_ollama_available()` health check, httpx client (replaced urllib), Ollama `/api/chat` with proper message roles |
+| 2026-08-04 | Antigravity | **UPGRADE Phase 2:** Added configurable Ollama settings to `config.py` (`OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT`) and documented them in `.env.example` |
 

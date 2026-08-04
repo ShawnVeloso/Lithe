@@ -12,9 +12,16 @@ from src.backend.config import DB_PATH
 
 
 def get_connection() -> sqlite3.Connection:
-    """Returns a configured SQLite connection."""
-    conn = sqlite3.connect(DB_PATH)
+    """Returns a configured SQLite connection with WAL mode enabled.
+
+    WAL (Write-Ahead Logging) allows simultaneous readers and a single
+    writer without blocking — critical because the background indexer
+    thread writes while the LLM reads concurrently.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
     return conn
 
 
