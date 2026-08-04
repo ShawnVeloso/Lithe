@@ -1,7 +1,7 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-04T14:13 (PHT)
+> **Last Updated:** 2026-08-04T14:28 (PHT)
 
 ---
 
@@ -26,7 +26,7 @@
 |------|---------|
 | [.gitignore](file:///d:/Lithe/.gitignore) | Python, Node, Electron, `.env`, SQLite, OS artifact exclusions |
 | [.env.example](file:///d:/Lithe/.env.example) | Template documenting `GEMINI_API_KEY` |
-| [requirements.txt](file:///d:/Lithe/requirements.txt) | `google-genai`, `python-dotenv`, `fastapi`, `uvicorn[standard]` |
+| [requirements.txt](file:///d:/Lithe/requirements.txt) | `google-genai`, `python-dotenv`, `fastapi`, `uvicorn[standard]`, `watchdog` |
 
 ### Python Backend (`src/backend/`)
 
@@ -34,13 +34,15 @@
 |------|---------|---------|
 | [\_\_init\_\_.py](file:///d:/Lithe/src/__init__.py) | — | Root package init |
 | [backend/\_\_init\_\_.py](file:///d:/Lithe/src/backend/__init__.py) | — | Backend package init |
-| [config.py](file:///d:/Lithe/src/backend/config.py) | F-01 | Loads `GEMINI_API_KEY` from `.env`, fails fast if missing; exposes `GEMINI_MODEL` |
-| [brain.py](file:///d:/Lithe/src/backend/brain.py) | F-01 + F-06 | `chat(user_message) → str` — Gemini client, safeword detection, persona toggle |
-| [server.py](file:///d:/Lithe/src/backend/server.py) | F-02+F-03 | FastAPI on `localhost:8321` — `POST /api/chat`, `GET /api/health`, `POST /api/index` |
-| [memory.py](file:///d:/Lithe/src/backend/memory.py) | F-03 | SQLite database initialization and schema, `upsert_files()` |
-| [indexer.py](file:///d:/Lithe/src/backend/indexer.py) | F-03 | `walk_and_index()` using `os.walk` with strict directory exclusions |
+| [config.py](file:///d:/Lithe/src/backend/config.py) | F-01 | Loads `GEMINI_API_KEY` from `.env`, fails fast if missing; exposes `GEMINI_MODEL`, Ollama fallback config |
+| [brain.py](file:///d:/Lithe/src/backend/brain.py) | F-01 + F-06 | `chat(user_message) → str` — Gemini client, Ollama fallback, safeword detection, persona toggle |
+| [server.py](file:///d:/Lithe/src/backend/server.py) | F-02+F-03 | FastAPI on `localhost:8321` — `POST /api/chat`, `GET /api/health`, `POST /api/index`; starts watcher on boot |
+| [memory.py](file:///d:/Lithe/src/backend/memory.py) | F-03 | SQLite database initialization, schema with `category` column, `upsert_files()`, `delete_file_by_path()` |
+| [indexer.py](file:///d:/Lithe/src/backend/indexer.py) | F-03 | `walk_and_index()` using `os.walk` with strict exclusions and heuristic category tagging |
+| [heuristics.py](file:///d:/Lithe/src/backend/heuristics.py) | Phase 3 | `categorize_path()` — maps folder patterns + extensions to semantic category tags |
+| [watcher.py](file:///d:/Lithe/src/backend/watcher.py) | Phase 3 | Real-time file system watcher via `watchdog`; debounced events, auto-updates SQLite |
 | [retrieval.py](file:///d:/Lithe/src/backend/retrieval.py) | F-04 | Extracts file mentions, resolves via SQLite, and reads local file content |
-| [tools.py](file:///d:/Lithe/src/backend/tools.py) | F-05 | System-level functions (`rename_file`, `delete_file`) with safeword checking |
+| [tools.py](file:///d:/Lithe/src/backend/tools.py) | F-05 | System-level functions (`rename_file`, `delete_file`) with circuit breakers and safeword checking |
 | [prompts/\_\_init\_\_.py](file:///d:/Lithe/src/backend/prompts/__init__.py) | — | Prompts package init |
 | [prompts/system_prompt.py](file:///d:/Lithe/src/backend/prompts/system_prompt.py) | F-06 | `CANDID_SYSTEM_PROMPT`, `COMPLIANT_SYSTEM_PROMPT`, `SAFEWORD`, `detect_safeword()` |
 
@@ -109,7 +111,7 @@ Lithe is now a fully functional, permissioned local desktop assistant capable of
 5. Executing system tasks (rename, delete) via function calling (F-05).
 6. Enforcing a candid persona and strict safeword-gated permission protocols (F-06).
 
-**Next Step:** Proceed with UPGRADE_PLAN Phase 3 — Event-Driven Memory (watchdog file watcher) and The Heuristic Graph.
+**Next Step:** All UPGRADE_PLAN phases (1-3) are complete. Consider packaging the updated backend with PyInstaller and verifying the installer.
 
 ---
 
@@ -136,4 +138,10 @@ Lithe is now a fully functional, permissioned local desktop assistant capable of
 | 2026-08-04 | Antigravity | Minor: Added `TypeError` catch in `brain.py` function calling handler for malformed LLM arguments |
 | 2026-08-04 | Antigravity | **UPGRADE Phase 2:** Refactored Ollama fallback in `brain.py` — dedicated `_ollama_chat()` function, `_check_ollama_available()` health check, httpx client (replaced urllib), Ollama `/api/chat` with proper message roles |
 | 2026-08-04 | Antigravity | **UPGRADE Phase 2:** Added configurable Ollama settings to `config.py` (`OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT`) and documented them in `.env.example` |
+| 2026-08-04 | Antigravity | **UPGRADE Phase 3.4:** Created `heuristics.py` — pure-function engine mapping 15+ folder patterns and 20+ extension rules to semantic category tags |
+| 2026-08-04 | Antigravity | **UPGRADE Phase 3.4:** Schema migration in `memory.py` — added `category` column, `delete_file_by_path()` function, updated upsert/search queries |
+| 2026-08-04 | Antigravity | **UPGRADE Phase 3.4:** Created `watcher.py` — `watchdog`-based real-time file watcher with 1s debouncing, EXCLUDED_DIRS filtering, auto SQLite updates |
+| 2026-08-04 | Antigravity | **UPGRADE Phase 3.4:** Updated `indexer.py` to apply heuristic category tags during `walk_and_index()` |
+| 2026-08-04 | Antigravity | **UPGRADE Phase 3.4:** Updated `server.py` startup — runs initial index then starts file watcher |
+| 2026-08-04 | Antigravity | **UPGRADE Phase 3.5:** Updated `brain.py` — `search_files` tool now shows `[category]` tags in results |
 

@@ -4,6 +4,8 @@ Lithe — Directory Indexer (F-03)
 Crawls whitelisted directories using os.walk, applying strict exclusions
 for heavy or hidden folders, and extracts file metadata for storage in
 the SQLite memory layer.
+
+Phase 3: Now applies heuristic category tags to each file during indexing.
 """
 
 import os
@@ -12,8 +14,10 @@ from typing import Any, Dict, List
 
 from src.backend.config import INDEX_WHITELIST
 from src.backend.memory import upsert_files
+from src.backend.heuristics import categorize_path
 
-# Strict exclusions for directory names (do not traverse into these)
+# Strict exclusions for directory names (do not traverse into these).
+# Shared with watcher.py to keep filtering consistent.
 EXCLUDED_DIRS = {
     "node_modules",
     ".git",
@@ -34,7 +38,8 @@ BATCH_SIZE = 500
 def walk_and_index() -> int:
     """
     Walks all directories in INDEX_WHITELIST, extracts file metadata,
-    and upserts into the SQLite database in batches.
+    applies heuristic category tags, and upserts into the SQLite database
+    in batches.
     
     Returns:
         The total number of files indexed.
@@ -70,6 +75,7 @@ def walk_and_index() -> int:
                         "size_bytes": stat.st_size,
                         "modified_at": stat.st_mtime,
                         "indexed_at": current_time,
+                        "category": categorize_path(file_path),
                     }
                     
                     current_batch.append(file_record)

@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from src.backend.brain import chat
 from src.backend.indexer import walk_and_index
+from src.backend.watcher import start_watcher
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -30,10 +31,14 @@ app = FastAPI(title="Lithe Backend", version="0.1.0")
 
 
 @app.on_event("startup")
-def auto_index_on_startup():
-    """Automatically index whitelisted directories when the server boots."""
+def auto_index_and_watch():
+    """Index whitelisted directories on boot, then start the file watcher."""
+    def _index_then_watch():
+        walk_and_index()
+        start_watcher()
+
     print("[Lithe] Auto-indexing whitelisted directories in the background...")
-    thread = threading.Thread(target=walk_and_index, daemon=True)
+    thread = threading.Thread(target=_index_then_watch, daemon=True)
     thread.start()
 
 app.add_middleware(
