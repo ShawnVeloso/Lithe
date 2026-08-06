@@ -1,7 +1,7 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-04T14:28 (PHT)
+> **Last Updated:** 2026-08-06T19:50 (PHT)
 
 ---
 
@@ -15,6 +15,10 @@
 | **F-04** — RAG & File Context | ✅ Complete | Regex extraction, SQLite lookup, context injection |
 | **F-05** — Basic Task Execution | ✅ Complete | LLM Function Calling with dynamic safeword wrappers |
 | **F-06** — Candid Persona & Safeword | ✅ Complete | Dual system prompts, case-insensitive safeword |
+| **F-07** — Desktop Packaging | ✅ Complete | PyInstaller backend + electron-builder NSIS installer |
+| **UPGRADE Phase 1** — Foundation & Safety | ✅ Complete | SQLite WAL mode, circuit breakers with path validation & timeouts |
+| **UPGRADE Phase 2** — Reliability | ✅ Complete | Ollama fallback with health check, configurable model/URL/timeout |
+| **UPGRADE Phase 3** — Efficiency & Context | ✅ Complete | Real-time file watcher (watchdog), heuristic category tagging |
 
 ---
 
@@ -25,8 +29,8 @@
 | File | Purpose |
 |------|---------|
 | [.gitignore](file:///d:/Lithe/.gitignore) | Python, Node, Electron, `.env`, SQLite, OS artifact exclusions |
-| [.env.example](file:///d:/Lithe/.env.example) | Template documenting `GEMINI_API_KEY` |
-| [requirements.txt](file:///d:/Lithe/requirements.txt) | `google-genai`, `python-dotenv`, `fastapi`, `uvicorn[standard]`, `watchdog` |
+| [.env.example](file:///d:/Lithe/.env.example) | Template documenting `GEMINI_API_KEY`, `INDEX_WHITELIST`, Ollama config |
+| [requirements.txt](file:///d:/Lithe/requirements.txt) | `google-genai`, `python-dotenv`, `fastapi`, `uvicorn[standard]`, `watchdog`, `httpx` |
 
 ### Python Backend (`src/backend/`)
 
@@ -34,15 +38,16 @@
 |------|---------|---------|
 | [\_\_init\_\_.py](file:///d:/Lithe/src/__init__.py) | — | Root package init |
 | [backend/\_\_init\_\_.py](file:///d:/Lithe/src/backend/__init__.py) | — | Backend package init |
-| [config.py](file:///d:/Lithe/src/backend/config.py) | F-01 | Loads `GEMINI_API_KEY` from `.env`, fails fast if missing; exposes `GEMINI_MODEL`, Ollama fallback config |
-| [brain.py](file:///d:/Lithe/src/backend/brain.py) | F-01 + F-06 | `chat(user_message) → str` — Gemini client, Ollama fallback, safeword detection, persona toggle |
-| [server.py](file:///d:/Lithe/src/backend/server.py) | F-02+F-03 | FastAPI on `localhost:8321` — `POST /api/chat`, `GET /api/health`, `POST /api/index`; starts watcher on boot |
-| [memory.py](file:///d:/Lithe/src/backend/memory.py) | F-03 | SQLite database initialization, schema with `category` column, `upsert_files()`, `delete_file_by_path()` |
-| [indexer.py](file:///d:/Lithe/src/backend/indexer.py) | F-03 | `walk_and_index()` using `os.walk` with strict exclusions and heuristic category tagging |
-| [heuristics.py](file:///d:/Lithe/src/backend/heuristics.py) | Phase 3 | `categorize_path()` — maps folder patterns + extensions to semantic category tags |
-| [watcher.py](file:///d:/Lithe/src/backend/watcher.py) | Phase 3 | Real-time file system watcher via `watchdog`; debounced events, auto-updates SQLite |
-| [retrieval.py](file:///d:/Lithe/src/backend/retrieval.py) | F-04 | Extracts file mentions, resolves via SQLite, and reads local file content |
-| [tools.py](file:///d:/Lithe/src/backend/tools.py) | F-05 | System-level functions (`rename_file`, `delete_file`) with circuit breakers and safeword checking |
+| [config.py](file:///d:/Lithe/src/backend/config.py) | F-01 + Phase 2 | Loads `GEMINI_API_KEY` from `.env`, fails fast if missing; exposes `GEMINI_MODEL`, Ollama fallback config (`OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT`), `DB_PATH`, `INDEX_WHITELIST`; supports 3-tier .env resolution (AppData → exe-adjacent → project root) |
+| [brain.py](file:///d:/Lithe/src/backend/brain.py) | F-01 + F-05 + F-06 + Phase 2 | `chat(user_message) → str` — Gemini client, function calling loop (rename, delete, search_files), safeword-gated tool wrappers, Ollama fallback via `_ollama_chat()` |
+| [server.py](file:///d:/Lithe/src/backend/server.py) | F-02 + F-03 + Phase 3 | FastAPI on `localhost:8321` — `POST /api/chat`, `GET /api/health`, `POST /api/index`; auto-indexes then starts file watcher on boot |
+| [server_entry.py](file:///d:/Lithe/src/backend/server_entry.py) | F-07 | PyInstaller entry point — standalone `.env` resolution for packaged mode |
+| [memory.py](file:///d:/Lithe/src/backend/memory.py) | F-03 + Phase 1 + Phase 3 | SQLite DB init with WAL mode + busy_timeout, schema with `category` column, `upsert_files()`, `delete_file_by_path()`, `find_file_paths()`, `search_files_by_name()` |
+| [indexer.py](file:///d:/Lithe/src/backend/indexer.py) | F-03 + Phase 3 | `walk_and_index()` using `os.walk` with strict exclusions, heuristic category tagging, batch upsert |
+| [heuristics.py](file:///d:/Lithe/src/backend/heuristics.py) | Phase 3 | `categorize_path()` — maps 15+ folder patterns and 20+ extension rules to semantic category tags |
+| [watcher.py](file:///d:/Lithe/src/backend/watcher.py) | Phase 3 | Real-time file system watcher via `watchdog`; debounced events (1s), auto-updates SQLite on create/modify/delete/move |
+| [retrieval.py](file:///d:/Lithe/src/backend/retrieval.py) | F-04 | Extracts file mentions via regex, resolves via SQLite, reads local file content (100KB cap) |
+| [tools.py](file:///d:/Lithe/src/backend/tools.py) | F-05 + Phase 1 | System-level functions (`rename_file`, `delete_file`) with circuit breakers: path validation (empty, null bytes, protected system dirs), path normalization (`realpath`), 30-second timeout wrapper via `concurrent.futures` |
 | [prompts/\_\_init\_\_.py](file:///d:/Lithe/src/backend/prompts/__init__.py) | — | Prompts package init |
 | [prompts/system_prompt.py](file:///d:/Lithe/src/backend/prompts/system_prompt.py) | F-06 | `CANDID_SYSTEM_PROMPT`, `COMPLIANT_SYSTEM_PROMPT`, `SAFEWORD`, `detect_safeword()` |
 
@@ -55,13 +60,13 @@
 | [tsconfig.json](file:///d:/Lithe/src/frontend/tsconfig.json) | Root TS config (references node + web) |
 | [tsconfig.node.json](file:///d:/Lithe/src/frontend/tsconfig.node.json) | TS config for main + preload |
 | [tsconfig.web.json](file:///d:/Lithe/src/frontend/tsconfig.web.json) | TS config for React renderer |
-| [src/main/index.ts](file:///d:/Lithe/src/frontend/src/main/index.ts) | Electron main process — fixed 1000×700 window, spawns/kills Python server |
+| [src/main/index.ts](file:///d:/Lithe/src/frontend/src/main/index.ts) | Electron main process — fixed 1000×700 window, spawns/kills Python server, dev/prod path resolution |
 | [src/preload/index.ts](file:///d:/Lithe/src/frontend/src/preload/index.ts) | `litheAPI.chat()` + `litheAPI.healthCheck()` via contextBridge |
 | [src/renderer/index.html](file:///d:/Lithe/src/frontend/src/renderer/index.html) | HTML shell, Inter font, React mount point |
 | [src/renderer/src/main.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/main.tsx) | React entry point |
-| [src/renderer/src/App.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/App.tsx) | Chat shell — message state, health polling, error handling |
+| [src/renderer/src/App.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/App.tsx) | Chat shell — message state, health polling (10s), error handling |
 | [src/renderer/src/env.d.ts](file:///d:/Lithe/src/frontend/src/renderer/src/env.d.ts) | TypeScript declarations for `window.litheAPI` |
-| [src/renderer/src/index.css](file:///d:/Lithe/src/frontend/src/renderer/src/index.css) | Design system — dark navy, glassmorphism, gradients, animations |
+| [src/renderer/src/index.css](file:///d:/Lithe/src/frontend/src/renderer/src/index.css) | Design system — dark navy, glassmorphism, gradients, micro-animations |
 | [src/renderer/src/components/ChatWindow.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/components/ChatWindow.tsx) | Scrollable message feed, welcome screen, typing indicator |
 | [src/renderer/src/components/MessageBubble.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/components/MessageBubble.tsx) | Role-based message cards (user gradient / assistant glass) |
 | [src/renderer/src/components/ChatInput.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/components/ChatInput.tsx) | Auto-resizing textarea, Enter to send, disabled during loading |
@@ -80,6 +85,9 @@ User → ChatInput → App.tsx state → window.litheAPI.chat()
 - **Renderer** has zero access to `electron` or `node` — all backend calls go through `contextBridge`.
 - **Electron main** spawns the Python server as a child process and polls `/api/health` before showing the window.
 - **Safeword** (`"Override Lithe"`, case-insensitive) toggles the system prompt per-message.
+- **Ollama Fallback:** When Gemini fails (network, rate limit, API error), `brain.py` automatically routes the prompt to a local Ollama instance.
+- **File Watcher:** On server startup, the indexer runs a full crawl of `INDEX_WHITELIST`, then `watchdog` begins real-time monitoring for create/modify/delete/move events.
+- **Heuristic Graph:** Every indexed file receives a semantic category tag (e.g., "Backend Logic", "Data / Datasets") based on its folder path and extension.
 
 ---
 
@@ -92,26 +100,55 @@ User → ChatInput → App.tsx state → window.litheAPI.chat()
 | `OLLAMA_URL` | `.env` / default | `http://localhost:11434` |
 | `OLLAMA_MODEL` | `.env` / default | `llama3` |
 | `OLLAMA_TIMEOUT` | `.env` / default | `60` seconds |
+| `INDEX_WHITELIST` | `.env` | Comma-separated directories (currently: `D:\`) |
 | `SAFEWORD` | `system_prompt.py` | `"Override Lithe"` |
 | Python server port | `server.py` | `8321` |
 | Electron window | `main/index.ts` | 1000×700, non-resizable |
+| SQLite DB (dev) | `config.py` | `<project_root>/.lithe/lithe_memory.db` |
+| SQLite DB (prod) | `config.py` | `%APPDATA%/Lithe/lithe_memory.db` |
+
+---
+
+## Running the App
+
+### Development Mode
+```bash
+# Terminal 1: Start the Python backend
+cd d:\Lithe
+python -m src.backend.server
+
+# Terminal 2: Start the Electron frontend
+cd d:\Lithe\src\frontend
+npm run dev
+```
+
+### Production Mode
+- Install via `D:\Lithe\src\frontend\release\Lithe Setup 1.0.0.exe`
+- Launch from Start Menu → "Lithe"
 
 ---
 
 ## Immediate Next Steps
 
 ### Milestone Achieved
-All F-01 through F-06 roadmap features have been successfully implemented. 
+All F-01 through F-06 roadmap features AND all UPGRADE_PLAN phases (1–3) are complete.
 
-Lithe is now a fully functional, permissioned local desktop assistant capable of:
-1. Responding via the Gemini LLM (F-01).
-2. Interacting through a premium Electron+React Chat UI (F-02).
-3. Maintaining an SQLite index of whitelisted local directories (F-03).
-4. Reading local files on demand using regex-based extraction (F-04).
-5. Executing system tasks (rename, delete) via function calling (F-05).
-6. Enforcing a candid persona and strict safeword-gated permission protocols (F-06).
+Lithe is now a fully functional, permissioned local desktop assistant with:
+1. Gemini LLM with configurable Ollama offline fallback (F-01 + Phase 2)
+2. Premium Electron+React Chat UI (F-02)
+3. SQLite index with WAL mode for concurrent access (F-03 + Phase 1)
+4. RAG via regex-based file extraction (F-04)
+5. Function calling with circuit-breaker safety (F-05 + Phase 1)
+6. Candid persona with safeword gating (F-06)
+7. Real-time file watching and heuristic category tagging (Phase 3)
+8. Standalone Windows installer (F-07)
 
-**Next Step:** All UPGRADE_PLAN phases (1-3) are complete. Consider packaging the updated backend with PyInstaller and verifying the installer.
+### Suggested Next Directions (Pick One)
+1. **Re-package** the updated backend with PyInstaller and rebuild the NSIS installer to include all Phase 1–3 upgrades.
+2. **Chat History Persistence** — Save conversations to SQLite so they survive app restarts.
+3. **Streaming Responses** — Token-by-token output in the UI via Server-Sent Events instead of waiting for the full response.
+4. **Markdown Rendering** — Render code blocks, bold, lists, and other formatting in assistant chat bubbles.
+5. **Settings Panel** — In-app UI for managing API keys, whitelist directories, and toggling Ollama.
 
 ---
 
@@ -144,4 +181,4 @@ Lithe is now a fully functional, permissioned local desktop assistant capable of
 | 2026-08-04 | Antigravity | **UPGRADE Phase 3.4:** Updated `indexer.py` to apply heuristic category tags during `walk_and_index()` |
 | 2026-08-04 | Antigravity | **UPGRADE Phase 3.4:** Updated `server.py` startup — runs initial index then starts file watcher |
 | 2026-08-04 | Antigravity | **UPGRADE Phase 3.5:** Updated `brain.py` — `search_files` tool now shows `[category]` tags in results |
-
+| 2026-08-06 | Antigravity | **Documentation Audit:** Full sync of INDEX.md, FEATURES.md, and ARCHITECTURE.md — added UPGRADE Phase statuses, updated file manifest, added running instructions, expanded architecture notes, defined suggested next directions |
