@@ -17,7 +17,7 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
 
-from src.backend.config import INDEX_WHITELIST
+from src.backend.config import INDEX_WHITELIST, EXCLUDED_EXTENSIONS
 from src.backend.indexer import EXCLUDED_DIRS
 from src.backend.memory import upsert_files, delete_file_by_path
 from src.backend.heuristics import categorize_path
@@ -69,11 +69,11 @@ class _LitheEventHandler(FileSystemEventHandler):
     # ------------------------------------------------------------------
 
     def _is_excluded(self, path: str) -> bool:
-        """Check if the file resides inside an excluded directory.
+        """Check if the file resides inside an excluded directory or has an excluded extension."""
+        _, ext = os.path.splitext(path)
+        if ext and ext.lower() in EXCLUDED_EXTENSIONS:
+            return True
 
-        Inspects the parent directory segments (not the filename itself)
-        to stay consistent with the indexer's os.walk filtering.
-        """
         parent_parts = Path(path).parent.parts
         return any(
             part in EXCLUDED_DIRS or (part.startswith(".") and len(part) > 1)

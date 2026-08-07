@@ -123,6 +123,45 @@ def delete_files_by_root_directory(root: str) -> None:
         conn.commit()
 
 
+def delete_files_by_paths(paths: List[str]) -> None:
+    """Removes multiple file records by their absolute paths in batches.
+    
+    Used during startup reconciliation to clean up removed or excluded files.
+    """
+    if not paths:
+        return
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # SQLite has a limit on variables in a query (usually 999), batch in 900
+        for i in range(0, len(paths), 900):
+            chunk = paths[i:i+900]
+            placeholders = ",".join(["?"] * len(chunk))
+            cursor.execute(f"DELETE FROM files WHERE path IN ({placeholders})", chunk)
+        conn.commit()
+
+
+def delete_files_by_extension(ext: str) -> None:
+    """Removes all file records with a specific extension."""
+    ext = ext.lower()
+    if ext and not ext.startswith("."):
+        ext = f".{ext}"
+    with get_connection() as conn:
+        conn.execute("DELETE FROM files WHERE extension = ?", (ext,))
+        conn.commit()
+
+
+def get_all_files_mtime() -> Dict[str, float]:
+    """Fetches a dictionary mapping all indexed paths to their modified_at timestamp.
+    
+    Used by the indexer to reconcile the current state of the filesystem
+    against the stored database without running slow os.stat calls on unchanged files.
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT path, modified_at FROM files")
+        return {row["path"]: row["modified_at"] for row in cursor.fetchall()}
+
+
 def find_file_paths(filenames: List[str]) -> List[str]:
     """
     Finds the absolute paths for a list of filenames in the SQLite DB.
