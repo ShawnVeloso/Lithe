@@ -2,6 +2,7 @@ import { useRef, useEffect } from 'react'
 import type { Message } from '../App'
 import MessageBubble from './MessageBubble'
 import ChatInput from './ChatInput'
+import litheLogo from '../assets/lithe-mark-hero.svg'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -42,6 +43,7 @@ function ChatWindow({ messages, isLoading, error, onSendMessage, onToolResponse,
       <div className="message-feed" ref={feedRef}>
         {isEmpty ? (
           <div className="welcome-boot">
+            <img src={litheLogo} alt="Lithe Logo" className="boot-logo" />
             <span className="boot-line boot-line--accent">LITHE v1.0.0</span>
             <span className="boot-line">initializing local actor...</span>
             <span className="boot-line boot-line--success">

@@ -28,7 +28,7 @@
         "filter": ["**/*"]
       },
       {
-        "from": "../../build/icon.ico",
+        "from": "../../docs/lithe-brand/icon.ico",
         "to": "icon.ico"
       }
     ],
@@ -39,7 +39,7 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "../../build/icon.ico"
+      "icon": "../../docs/lithe-brand/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -48,9 +48,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Lithe",
-      "installerIcon": "../../build/icon.ico",
-      "uninstallerIcon": "../../build/icon.ico",
-      "installerHeaderIcon": "../../build/icon.ico"
+      "installerIcon": "../../docs/lithe-brand/icon.ico",
+      "uninstallerIcon": "../../docs/lithe-brand/icon.ico",
+      "installerHeaderIcon": "../../docs/lithe-brand/icon.ico"
     }
   },
   "dependencies": {
