@@ -6,6 +6,7 @@ import type { StatusResponse } from '../env.d'
 // ---------------------------------------------------------------------------
 interface IndexPanelProps {
   status: StatusResponse | null
+  lastEventTimestamp: number | null
 }
 
 // ---------------------------------------------------------------------------
@@ -40,13 +41,13 @@ function isDriveRoot(fullPath: string): boolean {
 // ---------------------------------------------------------------------------
 // IndexPanel — [01] INDEX
 // ---------------------------------------------------------------------------
-function IndexPanel({ status }: IndexPanelProps): JSX.Element {
+function IndexPanel({ status, lastEventTimestamp }: IndexPanelProps): JSX.Element {
   const [manualInput, setManualInput] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
 
   const watcherActive = status?.watcher_active ?? false
   const dirs = status?.watched_dirs ?? []
-  const lastEvent = status?.last_event_time ?? null
+  const lastEvent = lastEventTimestamp ?? status?.last_event_time ?? null
 
   const handleAddDialog = async (): Promise<void> => {
     try {

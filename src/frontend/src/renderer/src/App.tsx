@@ -1,11 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ChatWindow from './components/ChatWindow'
 import IndexPanel from './components/IndexPanel'
 import SystemPanel from './components/SystemPanel'
+import litheLogo from './assets/lithe-mark-hero.svg'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+export interface LogEvent {
+  type: 'indexed' | 'removed'
+  path: string
+  timestamp: number
+}
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -34,6 +40,46 @@ function App(): JSX.Element {
     watched_dirs: Array<{ path: string; file_count: number }>
     last_event_time: number | null
   } | null>(null)
+
+  const [logs, setLogs] = useState<LogEvent[]>([])
+  const [lastEventTime, setLastEventTime] = useState<number | null>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+
+  // WebSocket Connection
+  useEffect(() => {
+    if (!isOnline) return
+
+    const wsUrl = 'ws://127.0.0.1:8321/ws/watcher-log'
+    const ws = new WebSocket(wsUrl)
+    wsRef.current = ws
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.events && Array.isArray(data.events)) {
+          const newEvents = data.events as LogEvent[]
+          setLogs((prev) => {
+            const newLogs = [...prev, ...newEvents]
+            if (newLogs.length > 1000) return newLogs.slice(-1000)
+            return newLogs
+          })
+          if (newEvents.length > 0) {
+            setLastEventTime(newEvents[newEvents.length - 1].timestamp)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to parse WebSocket message:', err)
+      }
+    }
+
+    ws.onerror = (err) => {
+      console.error('WebSocket Error:', err)
+    }
+
+    return () => {
+      ws.close()
+    }
+  }, [isOnline])
 
   // Check backend health on mount (every 10s)
   useEffect(() => {
@@ -142,15 +188,18 @@ function App(): JSX.Element {
 
   return (
     <div className="app-shell">
-      {/* Header bar */}
+      {/* Header bar / Custom Title Bar */}
       <div className="header-bar">
-        <span className="header-bar__title">LITHE</span>
+        <div className="header-bar__brand">
+          <img src={litheLogo} alt="Lithe Logo" className="header-bar__logo" />
+          <span className="header-bar__title">LITHE</span>
+        </div>
         <span className="header-bar__tag">LITHE // LOCAL-AI</span>
       </div>
 
       {/* Main body: INDEX + CHAT side by side */}
       <div className="hud-body">
-        <IndexPanel status={status} />
+        <IndexPanel status={status} lastEventTimestamp={lastEventTime} />
         <ChatWindow
           messages={messages}
           isLoading={isLoading}
@@ -162,7 +211,7 @@ function App(): JSX.Element {
       </div>
 
       {/* System strip at the bottom */}
-      <SystemPanel isOnline={isOnline} safewordActive={safewordActive} status={status} />
+      <SystemPanel isOnline={isOnline} safewordActive={safewordActive} status={status} logs={logs} />
     </div>
   )
 }

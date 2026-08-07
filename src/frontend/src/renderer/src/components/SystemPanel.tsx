@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { StatusResponse } from '../env.d'
+import type { LogEvent } from './App'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -8,63 +9,21 @@ interface SystemPanelProps {
   isOnline: boolean
   safewordActive: boolean
   status: StatusResponse | null
-}
-
-interface LogEvent {
-  type: 'indexed' | 'removed'
-  path: string
-  timestamp: number
+  logs: LogEvent[]
 }
 
 // ---------------------------------------------------------------------------
 // SystemPanel — [03] SYSTEM (bottom strip)
 // ---------------------------------------------------------------------------
-function SystemPanel({ isOnline, safewordActive, status }: SystemPanelProps): JSX.Element {
+function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProps): JSX.Element {
   const tokens = status?.tokens
 
   const [isExpanded, setIsExpanded] = useState(true)
-  const [logs, setLogs] = useState<LogEvent[]>([])
   const [filterText, setFilterText] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
   
   const logFeedRef = useRef<HTMLDivElement>(null)
-  const wsRef = useRef<WebSocket | null>(null)
 
-  // WebSocket Connection
-  useEffect(() => {
-    // Only connect if we know the server is online to avoid spamming connection errors
-    if (!isOnline) return
-
-    const wsUrl = 'ws://127.0.0.1:8321/ws/watcher-log'
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (data.events && Array.isArray(data.events)) {
-          setLogs(prev => {
-            const newLogs = [...prev, ...data.events]
-            // Cap at 1000 items to prevent DOM bloat
-            if (newLogs.length > 1000) {
-              return newLogs.slice(-1000)
-            }
-            return newLogs
-          })
-        }
-      } catch (err) {
-        console.error('Failed to parse WebSocket message:', err)
-      }
-    }
-
-    ws.onerror = (err) => {
-      console.error('WebSocket Error:', err)
-    }
-
-    return () => {
-      ws.close()
-    }
-  }, [isOnline])
 
   // Autoscroll Logic
   useEffect(() => {

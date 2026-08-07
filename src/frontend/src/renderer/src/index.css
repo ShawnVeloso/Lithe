@@ -59,13 +59,25 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 36px;
+  height: 32px;
   padding: 0 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
   user-select: none;
   flex-shrink: 0;
+}
+
+.header-bar__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-bar__logo {
+  height: 18px;
+  width: auto;
+  opacity: 0.9;
 }
 
 .header-bar__title {
@@ -247,6 +259,7 @@ body {
   border-radius: 2px;
   cursor: pointer;
   transition: all var(--transition-fast);
+  -webkit-app-region: no-drag;
 }
 
 .header-action-btn:hover:not(:disabled) {
@@ -360,6 +373,14 @@ body {
   gap: 0;
   opacity: 0;
   animation: fadeIn 0.4s ease-out 0.15s forwards;
+}
+
+.boot-logo {
+  height: 48px;
+  width: auto;
+  opacity: 0.9;
+  margin-bottom: 16px;
+  align-self: flex-start;
 }
 
 .boot-line {

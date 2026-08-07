@@ -3,7 +3,7 @@
 start here
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-07T15:10 (PHT)
+> **Last Updated:** 2026-08-07T22:11 (PHT)
 
 ---
 
@@ -197,3 +197,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-07 | Antigravity | **UI Fixes — Semantic Colors:** Fixed `--success` drift in chat, re-colored `lithe>` prefix to `--text-dim`. |
 | 2026-08-07 | Antigravity | **UI Fixes — System Panel:** Added `[03] SYSTEM` header to match conventions, extracted live LLM token counts in `brain.py`, and piped to `SystemPanel.tsx` via `/api/status`. |
 | 2026-08-07 | Antigravity | **Live Watcher Log Console:** Created `broadcaster.py` to stream indexing/removal events. Exposed `/ws/watcher-log` WebSocket in `server.py` with 100ms batching and a 500-event history ring buffer. Built an expandable `system-log-drawer` in `SystemPanel.tsx` with autoscroll, filtering, and 1000-line DOM cap. |
+| 2026-08-07 | Antigravity | **UI Fixes — Themed Title Bar:** Added `titleBarStyle: 'hidden'` and `titleBarOverlay` to `index.ts`. Replaced default header with draggable custom title bar in `App.tsx` and `index.css`. Upgraded brand logo with `lithe-mark-hero.svg` and `icon.ico`. Fixed `[01] INDEX`'s `last event` missing updates by lifting WebSocket to `App.tsx`. Fixed port binding conflict by pinging server health before spawning `pythonProcess`. |

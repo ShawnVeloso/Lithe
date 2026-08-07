@@ -71,14 +71,18 @@ function stopPythonServer(): void {
   }
 }
 
+async function checkBackendHealth(): Promise<boolean> {
+  try {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/health`)
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
 async function waitForPythonServer(maxRetries = 30, delayMs = 500): Promise<boolean> {
   for (let i = 0; i < maxRetries; i++) {
-    try {
-      const response = await fetch(`${PYTHON_SERVER_URL}/api/health`)
-      if (response.ok) return true
-    } catch {
-      // Server not ready yet — retry
-    }
+    if (await checkBackendHealth()) return true
     await new Promise((resolve) => setTimeout(resolve, delayMs))
   }
   return false
@@ -90,7 +94,7 @@ async function waitForPythonServer(maxRetries = 30, delayMs = 500): Promise<bool
 function createWindow(): BrowserWindow {
   // Resolve icon path (works in both dev and production)
   const iconPath = is.dev
-    ? join(__dirname, '..', '..', '..', '..', 'build', 'icon.ico')
+    ? join(__dirname, '..', '..', '..', '..', 'docs', 'lithe-brand', 'icon.ico')
     : join(process.resourcesPath, 'icon.ico')
 
   const mainWindow = new BrowserWindow({
@@ -104,6 +108,12 @@ function createWindow(): BrowserWindow {
     icon: iconPath,
     show: false,
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#0e0e11',
+      symbolColor: '#c9c9ce',
+      height: 32
+    },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -148,14 +158,19 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // Start the Python backend
-  startPythonServer()
-  const serverReady = await waitForPythonServer()
+  // Start the Python backend if not already running
+  const alreadyRunning = await checkBackendHealth()
+  if (!alreadyRunning) {
+    startPythonServer()
+    const serverReady = await waitForPythonServer()
 
-  if (!serverReady) {
-    process.stderr.write(
-      '[Lithe] Python server failed to start. Make sure Python is installed and dependencies are available.\n'
-    )
+    if (!serverReady) {
+      process.stderr.write(
+        '[Lithe] Python server failed to start. Make sure Python is installed and dependencies are available.\n'
+      )
+    }
+  } else {
+    process.stdout.write('[Lithe] Backend already running on port 8321. Connecting to it.\n')
   }
 
   createWindow()
