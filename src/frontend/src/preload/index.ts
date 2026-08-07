@@ -1,4 +1,4 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 
 const PYTHON_SERVER_URL = 'http://127.0.0.1:8321'
 
@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('litheAPI', {
   /**
    * Send a chat message to the Python backend and return the response.
    */
-  chat: async (message: string): Promise<string> => {
+  chat: async (message: string): Promise<{response: string; tool_proposal?: any}> => {
     const response = await fetch(`${PYTHON_SERVER_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -50,6 +50,41 @@ contextBridge.exposeInMainWorld('litheAPI', {
       return await response.json()
     } catch {
       return null
+    }
+  },
+
+  /**
+   * Opens the native OS directory selection dialog.
+   */
+  selectDirectory: async (): Promise<string[]> => {
+    return await ipcRenderer.invoke('dialog:showOpenDialog')
+  },
+
+  /**
+   * Adds a path to the backend index whitelist.
+   */
+  addWhitelistPath: async (path: string): Promise<void> => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/index/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to add path: ${response.statusText}`)
+    }
+  },
+
+  /**
+   * Removes a path from the backend index whitelist.
+   */
+  removeWhitelistPath: async (path: string): Promise<void> => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/index/remove`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to remove path: ${response.statusText}`)
     }
   }
 })

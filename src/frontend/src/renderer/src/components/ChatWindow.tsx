@@ -11,13 +11,14 @@ interface ChatWindowProps {
   isLoading: boolean
   error: string | null
   onSendMessage: (content: string) => void
+  onToolResponse?: (accept: boolean) => Promise<void>
   isOnline: boolean
 }
 
 // ---------------------------------------------------------------------------
 // ChatWindow — [02] CHAT panel content
 // ---------------------------------------------------------------------------
-function ChatWindow({ messages, isLoading, error, onSendMessage, isOnline }: ChatWindowProps): JSX.Element {
+function ChatWindow({ messages, isLoading, error, onSendMessage, onToolResponse, isOnline }: ChatWindowProps): JSX.Element {
   const feedRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom on new messages or loading state change
@@ -58,7 +59,7 @@ function ChatWindow({ messages, isLoading, error, onSendMessage, isOnline }: Cha
         ) : (
           <>
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+              <MessageBubble key={msg.id} message={msg} onToolResponse={onToolResponse} />
             ))}
 
             {isLoading && (

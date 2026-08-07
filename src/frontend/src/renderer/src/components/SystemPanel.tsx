@@ -1,20 +1,31 @@
+import type { StatusResponse } from '../env.d'
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 interface SystemPanelProps {
   isOnline: boolean
   safewordActive: boolean
+  status: StatusResponse | null
 }
 
 // ---------------------------------------------------------------------------
 // SystemPanel — [03] SYSTEM (bottom strip)
 // ---------------------------------------------------------------------------
-function SystemPanel({ isOnline, safewordActive }: SystemPanelProps): JSX.Element {
+function SystemPanel({ isOnline, safewordActive, status }: SystemPanelProps): JSX.Element {
+  const tokens = status?.tokens
+
   return (
     <div
       className={`panel system-panel${safewordActive ? ' system-panel--safeword' : ''}`}
       id="system-panel"
     >
+      <div className="panel__header">
+        <span className="panel__label">
+          <span className="panel__label-number">[03]</span>
+          SYSTEM
+        </span>
+      </div>
       <div className="system-panel__content">
         {/* Server health */}
         <div className="system-stat">
@@ -55,10 +66,12 @@ function SystemPanel({ isOnline, safewordActive }: SystemPanelProps): JSX.Elemen
 
         <span className="system-separator" />
 
-        {/* Token counts placeholder */}
+        {/* Token counts */}
         <div className="system-stat">
           <span className="system-stat__label">tokens:</span>
-          <span className="system-stat__value">--</span>
+          <span className="system-stat__value" title="Prompt / Candidates / Total">
+            {tokens ? `${tokens.prompt} / ${tokens.candidates} / ${tokens.total}` : '--'}
+          </span>
         </div>
       </div>
     </div>

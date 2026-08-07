@@ -133,3 +133,31 @@ def execute_delete(path: str, safeword_active: bool) -> str:
         return _run_with_timeout(_do_delete)
     except Exception as e:
         return f"ERROR: Failed to delete path: {str(e)}"
+
+def execute_write(path: str, content: str, mode: str, safeword_active: bool) -> str:
+    """
+    Executes a file write operation (append or overwrite).
+    """
+    # Note: we check safeword in brain.py instead now, but keeping the signature
+    # for consistency until the unified diff flow replaces it.
+    
+    # --- Circuit Breaker: validate arguments ---
+    path_err = _validate_path(path, "path")
+    if path_err:
+        return path_err
+
+    if mode not in ["append", "overwrite"]:
+        return f"ERROR: Invalid mode '{mode}'. Must be 'append' or 'overwrite'."
+
+    def _do_write():
+        file_mode = "a" if mode == "append" else "w"
+        # Ensure parent directories exist
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, file_mode, encoding="utf-8") as f:
+            f.write(content)
+        return f"SUCCESS: Wrote to file '{path}' in {mode} mode."
+
+    try:
+        return _run_with_timeout(_do_write)
+    except Exception as e:
+        return f"ERROR: Failed to write to file: {str(e)}"

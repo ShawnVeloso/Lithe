@@ -53,11 +53,27 @@ def walk_and_index() -> int:
     current_time = time.time()
 
     for root_dir in INDEX_WHITELIST:
-        if not os.path.exists(root_dir):
-            print(f"[Lithe Indexer] Warning: Directory not found: {root_dir}")
-            continue
+        total_indexed += walk_and_index_path(root_dir, _batch=current_batch)
 
-        for dirpath, dirnames, filenames in os.walk(root_dir):
+    # Upsert any remaining files
+    if current_batch:
+        upsert_files(current_batch)
+
+    print(f"[Lithe Indexer] Indexing complete. Indexed {total_indexed} files.")
+    return total_indexed
+
+def walk_and_index_path(root_dir: str, _batch: List[Dict[str, Any]] = None) -> int:
+    """Indexes a single root directory."""
+    if not os.path.exists(root_dir):
+        print(f"[Lithe Indexer] Warning: Directory not found: {root_dir}")
+        return 0
+
+    current_time = time.time()
+    total_indexed = 0
+    is_root_call = _batch is None
+    batch = _batch if not is_root_call else []
+
+    for dirpath, dirnames, filenames in os.walk(root_dir):
             # Modify dirnames in-place to prevent os.walk from entering excluded directories
             dirnames[:] = [d for d in dirnames if d not in EXCLUDED_DIRS and not d.startswith(".")]
 
@@ -78,22 +94,21 @@ def walk_and_index() -> int:
                         "category": categorize_path(file_path),
                     }
                     
-                    current_batch.append(file_record)
+                    batch.append(file_record)
                     total_indexed += 1
                     
-                    if len(current_batch) >= BATCH_SIZE:
-                        upsert_files(current_batch)
-                        current_batch.clear()
+                    if len(batch) >= BATCH_SIZE:
+                        upsert_files(batch)
+                        batch.clear()
                         
                 except Exception as e:
                     # Catch permission errors or missing files during walk
                     print(f"[Lithe Indexer] Error processing {file_path}: {e}")
 
-    # Upsert any remaining files
-    if current_batch:
-        upsert_files(current_batch)
+    # If this was called standalone, commit the remaining batch
+    if is_root_call and batch:
+        upsert_files(batch)
 
-    print(f"[Lithe Indexer] Indexing complete. Indexed {total_indexed} files.")
     return total_indexed
 
 if __name__ == "__main__":

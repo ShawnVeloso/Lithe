@@ -136,3 +136,12 @@
 - [x] **Status API:** Added `GET /api/status` endpoint + `get_file_count_by_directory()` + `last_event_time` watcher state.
 - [x] **Font:** Swapped Inter → JetBrains Mono via Google Fonts.
 - [x] **Electron Window:** Background updated to `#08080a`, resizable with min 900×600, default 1100×720.
+
+## U-07 — UI & UX Fixes (Phase 4.1: Visual Polish & Control)
+**Rationale:** The initial HUD redesign lacked interactivity for the whitelist, executed mutating tools blindly without user confirmation, and had minor styling issues.
+**Implementation:**
+- [x] **Dynamic Whitelist Picker:** Replaced hardcoded `INDEX_WHITELIST` array with a dynamic UI in the `[01] INDEX` panel. Added `+ INDEX` native folder picker, manual text input, and `×` removal buttons.
+- [x] **Unified Tool Confirmation UX:** Intercepted file-mutating LLM tool calls (`write_file`, `delete_file`, `rename_file`) in `brain.py` and paused execution.
+- [x] **Diff Card Rendering:** `ToolProposalCard.tsx` component renders diff strings for tool proposals, allowing the user to ACCEPT or REJECT before execution resumes.
+- [x] **Semantic Color Fixes:** Fixed `--success` drift in chat (green is only for actual success events, standard text uses `--text-dim` or `--text`).
+- [x] **Live Token Telemetry:** `brain.py` extracts LLM token usage metadata, passed through `/api/status` to populate the `[03] SYSTEM` panel.

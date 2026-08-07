@@ -109,6 +109,20 @@ def delete_file_by_path(path: str) -> None:
         conn.commit()
 
 
+def delete_files_by_root_directory(root: str) -> None:
+    """Removes all file records under a specific root directory.
+    
+    Used when a directory is removed from the whitelist.
+    """
+    normalized = root.replace("\\", "/")
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM files WHERE REPLACE(path, '\\', '/') LIKE ?",
+            (f"{normalized}%",),
+        )
+        conn.commit()
+
+
 def find_file_paths(filenames: List[str]) -> List[str]:
     """
     Finds the absolute paths for a list of filenames in the SQLite DB.
