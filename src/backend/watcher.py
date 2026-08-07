@@ -22,8 +22,13 @@ from src.backend.indexer import EXCLUDED_DIRS
 from src.backend.memory import upsert_files, delete_file_by_path
 from src.backend.heuristics import categorize_path
 
-# Module-level state for the /api/status endpoint
+from src.backend.heuristics import categorize_path
+
+# Module-level state
 last_event_time: float | None = None
+_observer: Observer | None = None
+_handler = None
+_watches = {}
 
 
 class _LitheEventHandler(FileSystemEventHandler):
@@ -128,37 +133,52 @@ class _LitheEventHandler(FileSystemEventHandler):
 # ---------------------------------------------------------------------------
 
 def start_watcher() -> Observer | None:
-    """Start the file system watcher for all whitelisted directories.
+    """Start the file system watcher for all whitelisted directories."""
+    global _observer, _handler
+    if _observer is not None:
+        return _observer
 
-    Schedules recursive watchers on each directory in INDEX_WHITELIST.
-    The Observer runs as a daemon thread and stops automatically when
-    the main process exits.
+    _observer = Observer()
+    _observer.daemon = True
+    _handler = _LitheEventHandler()
 
-    Returns:
-        The Observer instance (call .stop() to shut down),
-        or None if there are no directories to watch.
-    """
-    if not INDEX_WHITELIST:
-        print("[Lithe Watcher] INDEX_WHITELIST is empty. Nothing to watch.")
-        return None
-
-    observer = Observer()
-    observer.daemon = True
-    handler = _LitheEventHandler()
-
-    watched = 0
     for directory in INDEX_WHITELIST:
-        if os.path.isdir(directory):
-            observer.schedule(handler, directory, recursive=True)
-            print(f"[Lithe Watcher] Watching: {directory}")
-            watched += 1
-        else:
-            print(f"[Lithe Watcher] Warning: Directory not found: {directory}")
+        add_watch(directory)
 
-    if watched == 0:
+    if not _watches:
         print("[Lithe Watcher] No valid directories to watch.")
-        return None
+        # We start the observer anyway so we can add watches later
+        _observer.start()
+        return _observer
 
-    observer.start()
-    print(f"[Lithe Watcher] File system watcher started ({watched} directories).")
-    return observer
+    _observer.start()
+    print(f"[Lithe Watcher] File system watcher started ({len(_watches)} directories).")
+    return _observer
+
+
+def add_watch(path: str) -> bool:
+    """Dynamically add a directory to the active watcher."""
+    global _observer, _handler, _watches
+    if not _observer or not _handler:
+        return False
+    if path in _watches:
+        return True
+    if os.path.isdir(path):
+        watch = _observer.schedule(_handler, path, recursive=True)
+        _watches[path] = watch
+        print(f"[Lithe Watcher] Started watching: {path}")
+        return True
+    else:
+        print(f"[Lithe Watcher] Warning: Directory not found: {path}")
+        return False
+
+
+def remove_watch(path: str) -> None:
+    """Dynamically remove a directory from the active watcher."""
+    global _observer, _watches
+    if not _observer:
+        return
+    watch = _watches.pop(path, None)
+    if watch:
+        _observer.unschedule(watch)
+        print(f"[Lithe Watcher] Stopped watching: {path}")

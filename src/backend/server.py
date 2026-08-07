@@ -59,8 +59,15 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     message: str
 
+class IndexRequest(BaseModel):
+    path: str
+
 class ChatResponse(BaseModel):
     response: str
+    tool_proposal: dict | None = None
+
+class ToolResponseRequest(BaseModel):
+    accept: bool
 
 # ---------------------------------------------------------------------------
 # Endpoints
@@ -74,12 +81,20 @@ async def health_check():
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
-    """Send a message to Lithe and receive a response.
-
-    The brain module handles safeword detection (F-06) and
-    LLM provider selection automatically.
-    """
+    """Primary chat endpoint: passes user message to Lithe's brain."""
+    from src.backend.brain import chat
     result = chat(request.message)
+    if isinstance(result, dict):
+        return ChatResponse(response="", tool_proposal=result.get("tool_proposal"))
+    return ChatResponse(response=result)
+
+@app.post("/api/chat/tool_response", response_model=ChatResponse)
+async def tool_response_endpoint(request: ToolResponseRequest):
+    """Endpoint for user to accept or reject a pending tool proposal."""
+    from src.backend.brain import handle_tool_response
+    result = handle_tool_response(request.accept)
+    if isinstance(result, dict):
+        return ChatResponse(response="", tool_proposal=result.get("tool_proposal"))
     return ChatResponse(response=result)
 
 
@@ -89,26 +104,46 @@ async def index_endpoint(background_tasks: BackgroundTasks):
     background_tasks.add_task(walk_and_index)
     return {"status": "indexing_started"}
 
+@app.post("/api/index/add")
+async def add_index_endpoint(request: IndexRequest, background_tasks: BackgroundTasks):
+    """Adds a new directory to the whitelist, indexes it, and starts watching it."""
+    from src.backend.config import update_whitelist
+    from src.backend.watcher import add_watch
+    from src.backend.indexer import walk_and_index_path
+    
+    update_whitelist(request.path)
+    add_watch(request.path)
+    background_tasks.add_task(walk_and_index_path, request.path)
+    return {"status": "added", "path": request.path}
+
+@app.delete("/api/index/remove")
+async def remove_index_endpoint(request: IndexRequest):
+    """Removes a directory from the whitelist, stops watching it, and deletes its files from DB."""
+    from src.backend.config import update_whitelist
+    from src.backend.watcher import remove_watch
+    from src.backend.memory import delete_files_by_root_directory
+    
+    update_whitelist(request.path, remove=True)
+    remove_watch(request.path)
+    delete_files_by_root_directory(request.path)
+    return {"status": "removed", "path": request.path}
+
 
 @app.get("/api/status")
 async def status_endpoint():
-    """Returns live system status for the HUD panels.
-
-    Feeds:
-      - [01] INDEX panel: watched dirs, file counts, watcher status
-      - [03] SYSTEM panel: server mode, safeword state
-    """
+    """Returns background indexer status for the frontend HUD."""
+    from src.backend.watcher import last_event_time, _observer
     from src.backend.config import INDEX_WHITELIST
     from src.backend.memory import get_file_count_by_directory
-    from src.backend import watcher as watcher_module
+    from src.backend.brain import last_token_counts
 
-    watched_dirs = get_file_count_by_directory(INDEX_WHITELIST)
-    evt_time = watcher_module.last_event_time
+    watcher_active = _observer is not None and _observer.is_alive()
 
     return {
-        "watcher_active": evt_time is not None or len(INDEX_WHITELIST) > 0,
-        "watched_dirs": watched_dirs,
-        "last_event_time": evt_time,
+        "watcher_active": watcher_active,
+        "watched_dirs": get_file_count_by_directory(INDEX_WHITELIST),
+        "last_event_time": last_event_time,
+        "tokens": last_token_counts,
     }
 
 

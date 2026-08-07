@@ -10,6 +10,11 @@ export interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  tool_proposal?: {
+    name: string
+    args: any
+    diff: string
+  }
 }
 
 // Safeword constant (matches backend: prompts/system_prompt.py)
@@ -82,12 +87,13 @@ function App(): JSX.Element {
     setIsLoading(true)
 
     try {
-      const response = await window.litheAPI.chat(content)
+      const { response, tool_proposal } = await window.litheAPI.chat(content)
 
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: response
+        content: response,
+        tool_proposal
       }
       setMessages((prev) => [...prev, assistantMessage])
 
@@ -99,6 +105,36 @@ function App(): JSX.Element {
       const errorMsg = err instanceof Error ? err.message : 'Failed to get a response.'
       setError(errorMsg)
       setSafewordActive(false)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleToolResponse = async (accept: boolean): Promise<void> => {
+    setError(null)
+    setIsLoading(true)
+    
+    // Optimistically add the user's choice as a system-like message
+    const decisionMsg: Message = {
+      id: `user-decision-${Date.now()}`,
+      role: 'user',
+      content: accept ? '[User Accepted Proposal]' : '[User Rejected Proposal]'
+    }
+    setMessages((prev) => [...prev, decisionMsg])
+
+    try {
+      const { response, tool_proposal } = await window.litheAPI.toolResponse(accept)
+
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: response,
+        tool_proposal
+      }
+      setMessages((prev) => [...prev, assistantMessage])
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to respond to tool.'
+      setError(errorMsg)
     } finally {
       setIsLoading(false)
     }
@@ -120,12 +156,13 @@ function App(): JSX.Element {
           isLoading={isLoading}
           error={error}
           onSendMessage={handleSendMessage}
+          onToolResponse={handleToolResponse}
           isOnline={isOnline}
         />
       </div>
 
       {/* System strip at the bottom */}
-      <SystemPanel isOnline={isOnline} safewordActive={safewordActive} />
+      <SystemPanel isOnline={isOnline} safewordActive={safewordActive} status={status} />
     </div>
   )
 }

@@ -3,7 +3,7 @@
 start here
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-07T13:52 (PHT)
+> **Last Updated:** 2026-08-07T14:56 (PHT)
 
 ---
 
@@ -192,3 +192,7 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-07 | Antigravity | **HUD Redesign — Components:** Rebuilt `App.tsx` as three-pane HUD orchestrator, created `IndexPanel.tsx` and `SystemPanel.tsx`, restyled `ChatWindow.tsx` (boot screen + cursor indicator), `MessageBubble.tsx` (terminal prefixes), `ChatInput.tsx` (command-line style) |
 | 2026-08-07 | Antigravity | **HUD Redesign — Electron:** Updated `main/index.ts` — `backgroundColor: #08080a`, enabled resizing (min 900×600), default 1100×720 |
 | 2026-08-07 | Antigravity | **HUD Redesign — Font:** Swapped `index.html` from Inter to JetBrains Mono Google Font |
+| 2026-08-07 | Antigravity | **UI Fixes — Whitelist Picker:** Replaced blind full-drive indexing with a dynamic whitelist picker in `IndexPanel.tsx`, added `+ INDEX` and text input, exposed via `dialog.showOpenDialog` in main, updated `watcher.py` and `indexer.py` to handle dynamic watch/index adding. |
+| 2026-08-07 | Antigravity | **UI Fixes — Unified Tool Confirmation UX:** Intercepted mutating LLM tool calls (`write_file`, `delete_file`, `rename_file`) in `brain.py` to pause execution and send a `tool_proposal` to the frontend. Implemented `ToolProposalCard.tsx` with diffs and ACCEPT/REJECT buttons. |
+| 2026-08-07 | Antigravity | **UI Fixes — Semantic Colors:** Fixed `--success` drift in chat, re-colored `lithe>` prefix to `--text-dim`. |
+| 2026-08-07 | Antigravity | **UI Fixes — System Panel:** Added `[03] SYSTEM` header to match conventions, extracted live LLM token counts in `brain.py`, and piped to `SystemPanel.tsx` via `/api/status`. |

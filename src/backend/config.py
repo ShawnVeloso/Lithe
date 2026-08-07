@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 # Load .env — supports packaged (frozen) and development modes
 # ---------------------------------------------------------------------------
 _LOADED_ENV = False
+_ACTIVE_ENV_PATH = None
 
 # Priority 1: %APPDATA%/Lithe/.env (packaged / installed mode)
 _APPDATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "Lithe"
@@ -23,6 +24,7 @@ _APPDATA_ENV = _APPDATA_DIR / ".env"
 if _APPDATA_ENV.exists():
     load_dotenv(dotenv_path=_APPDATA_ENV)
     _LOADED_ENV = True
+    _ACTIVE_ENV_PATH = _APPDATA_ENV
 
 # Priority 2: Adjacent to the executable (portable mode)
 if not _LOADED_ENV and getattr(sys, 'frozen', False):
@@ -31,12 +33,14 @@ if not _LOADED_ENV and getattr(sys, 'frozen', False):
     if _PORTABLE_ENV.exists():
         load_dotenv(dotenv_path=_PORTABLE_ENV)
         _LOADED_ENV = True
+        _ACTIVE_ENV_PATH = _PORTABLE_ENV
 
 # Priority 3: Project root (development mode — two levels up from this file)
 if not _LOADED_ENV:
     _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
     _ENV_PATH = _PROJECT_ROOT / ".env"
     load_dotenv(dotenv_path=_ENV_PATH)
+    _ACTIVE_ENV_PATH = _ENV_PATH
 
 
 # ---------------------------------------------------------------------------
@@ -98,4 +102,40 @@ _raw_whitelist = os.getenv("INDEX_WHITELIST", "")
 INDEX_WHITELIST: list[str] = [
     path.strip() for path in _raw_whitelist.split(",") if path.strip()
 ]
+
+
+def update_whitelist(path: str, remove: bool = False) -> None:
+    """Updates the whitelist in memory and persists to the active .env file."""
+    global INDEX_WHITELIST
+    path = path.strip()
+    
+    if remove:
+        if path in INDEX_WHITELIST:
+            INDEX_WHITELIST.remove(path)
+    else:
+        if path and path not in INDEX_WHITELIST:
+            INDEX_WHITELIST.append(path)
+
+    # Persist to .env
+    if _ACTIVE_ENV_PATH and _ACTIVE_ENV_PATH.exists():
+        new_val = ",".join(INDEX_WHITELIST)
+        
+        with open(_ACTIVE_ENV_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            
+        found = False
+        for i, line in enumerate(lines):
+            if line.startswith("INDEX_WHITELIST="):
+                lines[i] = f"INDEX_WHITELIST={new_val}\n"
+                found = True
+                break
+                
+        if not found:
+            # Ensure file ends with a newline before appending
+            if lines and not lines[-1].endswith("\n"):
+                lines.append("\n")
+            lines.append(f"INDEX_WHITELIST={new_val}\n")
+            
+        with open(_ACTIVE_ENV_PATH, "w", encoding="utf-8") as f:
+            f.writelines(lines)
 

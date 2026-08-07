@@ -11,8 +11,9 @@ This module is the primary interface to the Gemini LLM. It:
 """
 
 import httpx
-from google import genai
+import difflib
 from google.genai import types, errors
+from google import genai
 
 from src.backend.config import (
     GEMINI_API_KEY,
@@ -27,8 +28,17 @@ from src.backend.prompts.system_prompt import (
     detect_safeword,
 )
 from src.backend.retrieval import get_file_contexts
-from src.backend.tools import execute_rename, execute_delete
+from src.backend.tools import execute_rename, execute_delete, execute_write
 from src.backend.memory import search_files_by_name
+
+# Global state for pausing execution during tool confirmation
+_pending_session: list[types.Content] | None = None
+_pending_tool_calls = None
+_pending_config = None
+_pending_tool_map = None
+
+# Global state for telemetry
+last_token_counts = {"prompt": 0, "candidates": 0, "total": 0}
 
 # ---------------------------------------------------------------------------
 # Gemini client (initialized once at module load)
@@ -132,14 +142,23 @@ def chat(user_message: str) -> str:
             source: The absolute path of the file to rename.
             destination: The new absolute path.
         """
-        return execute_rename(source, destination, safeword_active)
+        return execute_rename(source, destination, safeword_active=True)
 
     def delete_file(path: str) -> str:
         """Deletes a file or directory.
         Args:
             path: The absolute path of the file to delete.
         """
-        return execute_delete(path, safeword_active)
+        return execute_delete(path, safeword_active=True)
+
+    def write_file(path: str, content: str, mode: str) -> str:
+        """Writes content to a file.
+        Args:
+            path: The absolute path of the file to write to.
+            content: The text content to write.
+            mode: 'append' to add to the end of the file, or 'overwrite' to replace it entirely.
+        """
+        return execute_write(path, content, mode, safeword_active=True)
 
     def search_files(keyword: str) -> str:
         """Searches the local file index for files matching a keyword.
@@ -158,10 +177,11 @@ def chat(user_message: str) -> str:
             lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
         return f"Found {len(results)} file(s) matching '{keyword}':\n" + "\n".join(lines)
 
-    tools = [rename_file, delete_file, search_files]
+    tools = [rename_file, delete_file, write_file, search_files]
     tool_map = {
         "rename_file": rename_file,
         "delete_file": delete_file,
+        "write_file": write_file,
         "search_files": search_files,
     }
 
@@ -190,9 +210,51 @@ def chat(user_message: str) -> str:
 
         # --- Handle potential Function Calls ---
         if response.function_calls:
-            # Save the model's function call message to history
-            contents.append(response.candidates[0].content)
+            # We only support one function call at a time for simplicity in the UI
+            call = response.function_calls[0]
+            
+            # --- Check if it's a mutating tool that needs confirmation ---
+            if call.name in ["rename_file", "delete_file", "write_file"]:
+                global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map
+                _pending_session = contents
+                _pending_session.append(response.candidates[0].content)
+                _pending_tool_calls = response.function_calls
+                _pending_config = config
+                _pending_tool_map = tool_map
+                
+                # Generate diff string
+                diff_str = ""
+                if call.name == "delete_file":
+                    diff_str = f"- {call.args['path']}"
+                elif call.name == "rename_file":
+                    diff_str = f"- {call.args['source']}\n+ {call.args['destination']}"
+                elif call.name == "write_file":
+                    import os
+                    mode = call.args.get("mode", "overwrite")
+                    content = call.args.get("content", "")
+                    if mode == "append":
+                        diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
+                    else:
+                        path = call.args['path']
+                        if os.path.exists(path):
+                            with open(path, 'r', encoding='utf-8') as f:
+                                old_lines = f.readlines()
+                            new_lines = [line + '\n' if not line.endswith('\n') else line for line in content.splitlines()]
+                            diff = difflib.unified_diff(old_lines, new_lines, fromfile=path, tofile=path, lineterm='')
+                            diff_str = "\n".join(diff)
+                        else:
+                            diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
 
+                return {
+                    "tool_proposal": {
+                        "name": call.name,
+                        "args": call.args,
+                        "diff": diff_str
+                    }
+                }
+
+            # Non-mutating tools execute immediately
+            contents.append(response.candidates[0].content)
             function_responses = []
             for call in response.function_calls:
                 # Execute the python function mapped to the tool name
@@ -229,6 +291,15 @@ def chat(user_message: str) -> str:
                 config=config,
             )
 
+        # Update telemetry
+        if response.usage_metadata:
+            global last_token_counts
+            last_token_counts = {
+                "prompt": response.usage_metadata.prompt_token_count,
+                "candidates": response.usage_metadata.candidates_token_count,
+                "total": response.usage_metadata.total_token_count
+            }
+
         return response.text
 
     except (errors.APIError, httpx.TimeoutException, Exception) as e:
@@ -236,6 +307,69 @@ def chat(user_message: str) -> str:
         print(f"[Lithe] Gemini connection failed ({error_name}): {e}")
         print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
         return _ollama_chat(system_prompt, cleaned_message)
+
+
+def handle_tool_response(accept: bool) -> dict | str:
+    """Resumes the pending session after user accepts or rejects a tool."""
+    global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map
+    if not _pending_session or not _pending_tool_calls:
+        return "Error: No pending tool call found."
+
+    function_responses = []
+    
+    for call in _pending_tool_calls:
+        if accept:
+            if call.name in _pending_tool_map:
+                try:
+                    result = _pending_tool_map[call.name](**call.args)
+                except TypeError as e:
+                    result = f"Argument Error: {e}"
+                except Exception as e:
+                    result = f"Python Execution Error: {e}"
+            else:
+                result = f"Error: Tool {call.name} not recognized."
+        else:
+            result = "ERROR: The user REJECTED this operation. Acknowledge this and ask what else you can do."
+
+        function_responses.append(
+            types.Part.from_function_response(
+                name=call.name,
+                response={"result": result}
+            )
+        )
+
+    _pending_session.append(
+        types.Content(
+            role="user",
+            parts=function_responses
+        )
+    )
+
+    try:
+        response = _client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=_pending_session,
+            config=_pending_config,
+        )
+        
+        # Update telemetry
+        if response.usage_metadata:
+            global last_token_counts
+            last_token_counts = {
+                "prompt": response.usage_metadata.prompt_token_count,
+                "candidates": response.usage_metadata.candidates_token_count,
+                "total": response.usage_metadata.total_token_count
+            }
+
+        # Clear state
+        _pending_session = None
+        _pending_tool_calls = None
+        _pending_config = None
+        _pending_tool_map = None
+        return response.text
+    except Exception as e:
+        _pending_session = None
+        return f"Error continuing conversation: {str(e)}"
 
 
 # ---------------------------------------------------------------------------
