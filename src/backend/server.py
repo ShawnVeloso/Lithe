@@ -90,6 +90,28 @@ async def index_endpoint(background_tasks: BackgroundTasks):
     return {"status": "indexing_started"}
 
 
+@app.get("/api/status")
+async def status_endpoint():
+    """Returns live system status for the HUD panels.
+
+    Feeds:
+      - [01] INDEX panel: watched dirs, file counts, watcher status
+      - [03] SYSTEM panel: server mode, safeword state
+    """
+    from src.backend.config import INDEX_WHITELIST
+    from src.backend.memory import get_file_count_by_directory
+    from src.backend import watcher as watcher_module
+
+    watched_dirs = get_file_count_by_directory(INDEX_WHITELIST)
+    evt_time = watcher_module.last_event_time
+
+    return {
+        "watcher_active": evt_time is not None or len(INDEX_WHITELIST) > 0,
+        "watched_dirs": watched_dirs,
+        "last_event_time": evt_time,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------

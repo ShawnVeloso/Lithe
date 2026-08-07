@@ -22,6 +22,9 @@ from src.backend.indexer import EXCLUDED_DIRS
 from src.backend.memory import upsert_files, delete_file_by_path
 from src.backend.heuristics import categorize_path
 
+# Module-level state for the /api/status endpoint
+last_event_time: float | None = None
+
 
 class _LitheEventHandler(FileSystemEventHandler):
     """Handles file system events and syncs changes to the SQLite database."""
@@ -89,6 +92,8 @@ class _LitheEventHandler(FileSystemEventHandler):
 
     def _execute(self, action: str, path: str):
         """Process a debounced file system event."""
+        global last_event_time
+        last_event_time = time.time()
         key = f"{action}:{path}"
         with self._lock:
             self._pending.pop(key, None)

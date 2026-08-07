@@ -1,5 +1,4 @@
 {
-  "files": [],
   "include": ["src/renderer/src/**/*", "src/renderer/src/**/*.tsx"],
   "compilerOptions": {
     "composite": true,

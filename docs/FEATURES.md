@@ -27,6 +27,7 @@
 | U-03 | Ollama Fallback Pattern | Phase 2: Reliability | ✅ Complete |
 | U-04 | Event-Driven Memory (File Watcher) | Phase 3: Efficiency & Context | ✅ Complete |
 | U-05 | Heuristic Graph (Category Tagging) | Phase 3: Efficiency & Context | ✅ Complete |
+| U-06 | HUD Redesign (Three-Pane Terminal UI) | Phase 4: Visual Identity | ✅ Complete |
 
 ---
 
@@ -121,3 +122,17 @@
 - [x] `indexer.py` applies category tags during `walk_and_index()`.
 - [x] `watcher.py` applies category tags on real-time file events.
 - [x] `search_files` LLM tool displays `[category]` tags in search results.
+
+## U-06 — HUD Redesign (Phase 4: Visual Identity)
+**Rationale:** Lithe is a local, developer-facing tool that reads file systems and executes code. The UI should reflect that — terminal-inspired, not consumer chatbot. Replaces the glassmorphism theme with an amber/HUD console aesthetic.
+**Implementation:**
+- [x] **CSS Design System:** Full replacement of `index.css` — amber accent (`#ffb020`), near-black palette (`#08080a`), JetBrains Mono monospace stack, 0–2px border-radius, flat 1px hairline borders, no gradients/blur/glow.
+- [x] **Three-Pane Layout:** `[01] INDEX` (left, 220px) + `[02] CHAT` (center, flex) + `[03] SYSTEM` (bottom strip, full-width).
+- [x] **IndexPanel:** New component showing watched directories with file counts, watcher live/stopped status, last event time.
+- [x] **SystemPanel:** New component showing server health dot, candid/compliant mode, safeword indicator (violet when active), token count placeholder.
+- [x] **Terminal Messages:** Replaced bubble paradigm with `user>` / `lithe>` prefix style, flat text, no rounded cards.
+- [x] **Boot Screen:** Welcome screen restyled as init/boot log sequence with blinking cursor.
+- [x] **Command-Line Input:** Input styled with `>` prompt prefix, amber caret, flat `[SEND]` button.
+- [x] **Status API:** Added `GET /api/status` endpoint + `get_file_count_by_directory()` + `last_event_time` watcher state.
+- [x] **Font:** Swapped Inter → JetBrains Mono via Google Fonts.
+- [x] **Electron Window:** Background updated to `#08080a`, resizable with min 900×600, default 1100×720.

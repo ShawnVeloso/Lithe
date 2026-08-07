@@ -11,12 +11,13 @@ interface ChatWindowProps {
   isLoading: boolean
   error: string | null
   onSendMessage: (content: string) => void
+  isOnline: boolean
 }
 
 // ---------------------------------------------------------------------------
-// ChatWindow — Message feed + input area
+// ChatWindow — [02] CHAT panel content
 // ---------------------------------------------------------------------------
-function ChatWindow({ messages, isLoading, error, onSendMessage }: ChatWindowProps): JSX.Element {
+function ChatWindow({ messages, isLoading, error, onSendMessage, isOnline }: ChatWindowProps): JSX.Element {
   const feedRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom on new messages or loading state change
@@ -29,16 +30,30 @@ function ChatWindow({ messages, isLoading, error, onSendMessage }: ChatWindowPro
   const isEmpty = messages.length === 0 && !isLoading
 
   return (
-    <div className="chat-window">
+    <div className="panel chat-panel" id="chat-panel">
+      <div className="panel__header">
+        <span className="panel__label">
+          <span className="panel__label-number">[02]</span>
+          CHAT
+        </span>
+      </div>
+
       <div className="message-feed" ref={feedRef}>
         {isEmpty ? (
-          <div className="welcome">
-            <div className="welcome__icon">⚡</div>
-            <h1 className="welcome__title">Hey, I&apos;m Lithe.</h1>
-            <p className="welcome__subtitle">
-              Your candid AI assistant. I&apos;ll be direct with you — ask me anything
-              about your data, code, or projects.
-            </p>
+          <div className="welcome-boot">
+            <span className="boot-line boot-line--accent">LITHE v1.0.0</span>
+            <span className="boot-line">initializing local actor...</span>
+            <span className="boot-line boot-line--success">
+              ✓ gemini connection {isOnline ? 'established' : 'pending'}
+            </span>
+            <span className="boot-line boot-line--success">✓ sqlite memory loaded</span>
+            <span className="boot-line boot-line--success">✓ file watcher active</span>
+            <span className="boot-line boot-line--success">✓ circuit breakers armed</span>
+            <span className="boot-line">&nbsp;</span>
+            <span className="boot-line boot-line--title">
+              ready. type a command to begin.
+              <span className="boot-cursor" />
+            </span>
           </div>
         ) : (
           <>
@@ -47,12 +62,9 @@ function ChatWindow({ messages, isLoading, error, onSendMessage }: ChatWindowPro
             ))}
 
             {isLoading && (
-              <div className="message-row message-row--assistant">
-                <div className="typing-indicator">
-                  <span className="typing-indicator__dot" />
-                  <span className="typing-indicator__dot" />
-                  <span className="typing-indicator__dot" />
-                </div>
+              <div className="typing-indicator">
+                <span className="message-prefix message-prefix--assistant">lithe&gt;</span>
+                <span className="typing-cursor" />
               </div>
             )}
           </>

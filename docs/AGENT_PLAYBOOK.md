@@ -1,13 +1,6 @@
 # docs/AGENT_PLAYBOOK.md — Lithe(Jarvis-Lite) AI Agent Instructions
 
-> **This is the primary instruction file for all AI coding agents working on this repository.** > Read this file completely before writing any code. Failure to follow these rules will produce incorrect, inconsistent, or unsafe output.
-
----
-
-## 0. Before You Write Any Code
-1. **Read `docs/ARCHITECTURE.md`:** Understand the tech stack and the hybrid Electron/Python design.
-2. **Read `docs/FEATURES.md` (When created):** Ensure you understand the specific acceptance criteria for the feature you are building.
-3. **Plan First:** Always outline your proposed changes in a comment or a brief plan before modifying core files.
+> **Read `.agents/AGENTS.md` first.** It covers context-acquisition order and documentation-update rules — this file covers everything else: scope, safety, coding standards, and definition of done. Both are required reading, but don't duplicate each other.
 
 ---
 
@@ -24,7 +17,7 @@
 
 ## 2. File System Safety (CRITICAL)
 Lithe is designed to have full exploration of the user's C: and D: drives. However, AI agents must **never** write scripts that execute recursive wildcard searches across the entire root directory.
-* **Indexing First:** All file discovery must go through the local `SQLite` memory index. 
+* **Indexing First:** All file discovery must go through the local `SQLite` memory index.
 * **Read-Only by Default:** Unless explicitly requested by the user, treat all system files as Read-Only.
 * **Avoid `node_modules` and `.git`:** When writing directory scanning scripts, explicitly ignore hidden directories and heavy dependency folders to save compute.
 
@@ -32,7 +25,7 @@ Lithe is designed to have full exploration of the user's C: and D: drives. Howev
 
 ## 3. Technology & Coding Standards
 * **Backend:** Use **Python**. Favor built-in libraries (`os`, `json`, `sqlite3`) over third-party packages whenever possible to keep the application lightweight.
-* **Frontend:** Use **Electron + React (TypeScript)**. 
+* **Frontend:** Use **Electron + React (TypeScript)**.
 * **The "Brain":** When building LLM calls, default to using the Gemini API for speed, but ensure the architecture supports swapping to a local `Ollama` model easily.
 
 ---
@@ -43,9 +36,4 @@ Before you consider a task complete, verify:
 - [ ] You have not broken the boundary between the Electron frontend and the Python backend.
 - [ ] Any new environment variables are documented.
 - [ ] Code runs successfully on a Windows environment (the user's OS).
-
-## 5. Agent Logging & Handoff (CRITICAL)
-To maintain project continuity, you must document your progress before concluding any session.
-* **The Log Directory:** Maintain an `agent-logs/` directory inside the `docs/` folder.
-* **The Index:** You must update `docs/agent-logs/INDEX.md` with a high-level summary of what was just built, the specific files that were modified, and the exact next steps to be worked on.
-* **Read First:** At the start of every new conversation or task, you must read `INDEX.md` to establish the current state of the project before writing any code.
+- [ ] `docs/agent-logs/INDEX.md` has been updated per `.agents/AGENTS.md` §2 — this is not optional, check it before ending your session.
