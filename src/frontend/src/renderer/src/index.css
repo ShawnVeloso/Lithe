@@ -667,6 +667,12 @@ body {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   border-radius: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.system-panel--expanded {
+  height: 30vh;
 }
 
 .system-panel--safeword {
@@ -721,6 +727,97 @@ body {
   height: 14px;
   background: var(--border);
   flex-shrink: 0;
+}
+
+/* --- System Log Drawer --- */
+.system-log-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* Important for flex child scrolling */
+  border-bottom: 1px solid var(--border);
+}
+
+.system-log-feed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.system-log-feed::-webkit-scrollbar {
+  width: 4px;
+}
+.system-log-feed::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.system-log-empty {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-style: italic;
+  opacity: 0.5;
+  margin: auto;
+}
+
+.system-log-line {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  word-break: break-all;
+  display: flex;
+  gap: 8px;
+}
+
+.system-log-type {
+  flex-shrink: 0;
+  font-weight: 600;
+  width: 75px;
+}
+
+.system-log-type--indexed {
+  color: var(--info);
+}
+
+.system-log-type--removed {
+  color: var(--text-dim);
+}
+
+.system-log-path {
+  color: var(--text);
+  opacity: 0.8;
+}
+
+.system-log-filter {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  background: var(--bg-surface);
+  border-top: 1px solid rgba(42, 42, 46, 0.5);
+}
+
+.system-log-prompt {
+  color: var(--accent);
+  font-weight: bold;
+  font-size: 11px;
+  margin-right: 6px;
+}
+
+.system-log-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  outline: none;
+}
+.system-log-input::placeholder {
+  color: var(--text-dim);
 }
 
 /* --- Animations --- */

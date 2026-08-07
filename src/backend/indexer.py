@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 from src.backend.config import INDEX_WHITELIST
 from src.backend.memory import upsert_files
 from src.backend.heuristics import categorize_path
+from src.backend.broadcaster import broadcast_event
 
 # Strict exclusions for directory names (do not traverse into these).
 # Shared with watcher.py to keep filtering consistent.
@@ -96,6 +97,7 @@ def walk_and_index_path(root_dir: str, _batch: List[Dict[str, Any]] = None) -> i
                     
                     batch.append(file_record)
                     total_indexed += 1
+                    broadcast_event("indexed", file_path)
                     
                     if len(batch) >= BATCH_SIZE:
                         upsert_files(batch)
