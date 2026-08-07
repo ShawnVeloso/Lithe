@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('litheAPI', {
   getStatus: async (): Promise<{
     watcher_active: boolean
     watched_dirs: Array<{ path: string; file_count: number }>
+    excluded_extensions: string[]
     last_event_time: number | null
   } | null> => {
     try {
@@ -103,6 +104,34 @@ contextBridge.exposeInMainWorld('litheAPI', {
     })
     if (!response.ok) {
       throw new Error(`Failed to remove path: ${response.statusText}`)
+    }
+  },
+
+  /**
+   * Adds an extension to the excluded extensions list.
+   */
+  addExcludedExtension: async (ext: string): Promise<void> => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/extensions/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ext })
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to add extension: ${response.statusText}`)
+    }
+  },
+
+  /**
+   * Removes an extension from the excluded extensions list.
+   */
+  removeExcludedExtension: async (ext: string): Promise<void> => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/extensions/remove`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ext })
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to remove extension: ${response.statusText}`)
     }
   }
 })

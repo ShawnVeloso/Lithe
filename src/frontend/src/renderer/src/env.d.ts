@@ -5,22 +5,24 @@
 interface StatusResponse {
   watcher_active: boolean
   watched_dirs: Array<{ path: string; file_count: number }>
+  excluded_extensions: string[]
   last_event_time: number | null
-  tokens?: {
-    prompt: number
-    candidates: number
-    total: number
-  }
+  tokens: {
+    input: number
+    output: number
+  } | null
 }
 
 interface LitheAPI {
   chat: (message: string) => Promise<{response: string; tool_proposal?: any}>
   toolResponse: (accept: boolean) => Promise<{response: string; tool_proposal?: any}>
   healthCheck: () => Promise<boolean>
-  getStatus: () => Promise<StatusResponse | null>
+  getStatus: () => Promise<StatusResponse>
   selectDirectory: () => Promise<string[]>
   addWhitelistPath: (path: string) => Promise<void>
   removeWhitelistPath: (path: string) => Promise<void>
+  addExcludedExtension: (ext: string) => Promise<void>
+  removeExcludedExtension: (ext: string) => Promise<void>
 }
 
 declare global {

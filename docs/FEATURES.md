@@ -28,6 +28,8 @@
 | U-04 | Event-Driven Memory (File Watcher) | Phase 3: Efficiency & Context | ✅ Complete |
 | U-05 | Heuristic Graph (Category Tagging) | Phase 3: Efficiency & Context | ✅ Complete |
 | U-06 | HUD Redesign (Three-Pane Terminal UI) | Phase 4: Visual Identity | ✅ Complete |
+| U-07 | UI & UX Fixes | Phase 4.1: Visual Polish | ✅ Complete |
+| U-08 | Indexing Efficiency Upgrades | Phase 5: Performance | ✅ Complete |
 
 ---
 
@@ -146,3 +148,11 @@
 - [x] **Semantic Color Fixes:** Fixed `--success` drift in chat (green is only for actual success events, standard text uses `--text-dim` or `--text`).
 - [x] **Live Token Telemetry:** `brain.py` extracts LLM token usage metadata, passed through `/api/status` to populate the `[03] SYSTEM` panel.
 - [x] **Live Watcher Log Console:** Created `broadcaster.py` to stream indexing/removal events. Exposed `/ws/watcher-log` WebSocket in `server.py` with 100ms batching and a 500-event history ring buffer. Built an expandable `system-log-drawer` in `SystemPanel.tsx` with autoscroll, filtering, and 1000-line DOM cap.
+
+## U-08 — Indexing Efficiency Upgrades (Phase 5: Performance)
+**Rationale:** A full re-walk and database upsert of 141k+ files on every boot creates redundant I/O and CPU spikes. Furthermore, users need a way to filter out heavy binary extensions (like `.dll`, `.exe`) that pollute the LLM's context.
+**Implementation:**
+- [x] **Smart Extension Filtering (Backend):** Default `EXCLUDED_EXTENSIONS` master list implemented to block heavy binaries/bloatware out of the box, with persistence in `.env`. Respected by `indexer.py` and `watcher.py` (via `_is_excluded`).
+- [x] **Smart Extension Filtering (Frontend):** Extension exclusion UI in `IndexPanel.tsx` renders strictly inline using Flexbox with a fixed-height scrollable container to gracefully handle the large default tag list.
+- [x] **Startup Reconciliation:** `indexer.py` fetches all indexed files (`{path: modified_at}`) from SQLite before walking. Skips DB upserts for unchanged files. Cleans up missing or newly excluded files automatically.
+- [x] **Summarized Logging:** Startup bulk scans now print a single reconciliation summary (e.g., `reconciled: 12 new/modified, 3 removed, 141074 unchanged`) instead of streaming events. Live watcher events are unaffected.

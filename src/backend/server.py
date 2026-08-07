@@ -63,6 +63,9 @@ class ChatRequest(BaseModel):
 class IndexRequest(BaseModel):
     path: str
 
+class ExtensionRequest(BaseModel):
+    ext: str
+
 class ChatResponse(BaseModel):
     response: str
     tool_proposal: dict | None = None
@@ -130,11 +133,31 @@ async def remove_index_endpoint(request: IndexRequest):
     return {"status": "removed", "path": request.path}
 
 
+@app.post("/api/extensions/add")
+async def add_extension_endpoint(request: ExtensionRequest, background_tasks: BackgroundTasks):
+    """Adds a new extension to the excluded list and removes matching files from DB."""
+    from src.backend.config import update_excluded_extensions
+    from src.backend.memory import delete_files_by_extension
+    
+    update_excluded_extensions(request.ext)
+    background_tasks.add_task(delete_files_by_extension, request.ext)
+    return {"status": "added", "ext": request.ext}
+
+@app.delete("/api/extensions/remove")
+async def remove_extension_endpoint(request: ExtensionRequest, background_tasks: BackgroundTasks):
+    """Removes an extension from the excluded list and triggers a background re-index."""
+    from src.backend.config import update_excluded_extensions
+    
+    update_excluded_extensions(request.ext, remove=True)
+    background_tasks.add_task(walk_and_index)
+    return {"status": "removed", "ext": request.ext}
+
+
 @app.get("/api/status")
 async def status_endpoint():
     """Returns background indexer status for the frontend HUD."""
     from src.backend.watcher import last_event_time, _observer
-    from src.backend.config import INDEX_WHITELIST
+    from src.backend.config import INDEX_WHITELIST, EXCLUDED_EXTENSIONS
     from src.backend.memory import get_file_count_by_directory
     from src.backend.brain import last_token_counts
 
@@ -143,6 +166,7 @@ async def status_endpoint():
     return {
         "watcher_active": watcher_active,
         "watched_dirs": get_file_count_by_directory(INDEX_WHITELIST),
+        "excluded_extensions": EXCLUDED_EXTENSIONS,
         "last_event_time": last_event_time,
         "tokens": last_token_counts,
     }

@@ -97,11 +97,38 @@ _LITHE_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH: Path = _LITHE_DIR / "lithe_memory.db"
 
+DEFAULT_EXCLUDED_EXTENSIONS = [
+    ".xnb", ".pak", ".vpk", ".uasset", ".umap", ".unity3d", ".assets",
+    ".bsp", ".wad", ".sav", ".fbx", ".blend", ".obj", ".tga", ".dds",
+    ".mtl", ".stl", ".ply", ".exe", ".dll", ".so", ".dylib", ".sys", ".bin",
+    ".msi", ".apk", ".app", ".ipa", ".elf", ".cab", ".class", ".pyc",
+    ".pyo", ".pyd", ".o", ".a", ".lib", ".ilk", ".pdb", ".suo",
+    ".idb", ".manifest", ".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv",
+    ".flv", ".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".png", ".jpg",
+    ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tiff", ".psd", ".ai",
+    ".prproj", ".aep", ".tmp", ".temp", ".bak", ".swp", ".swo", ".DS_Store",
+    "Thumbs.db", ".dat", ".idx", ".pid", ".crdownload", ".part", ".cache",
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".xz", ".bz2", ".iso", ".vmdk",
+    ".qcow2", ".vdi", ".ova", ".img", ".dmg", ".ttf", ".otf", ".woff",
+    ".woff2", ".eot", ".sqlite", ".db", ".frm", ".ibd", ".mdf", ".ldf",
+    ".rdb", ".lock"
+]
+
 # Parse the comma-separated whitelist from .env
 _raw_whitelist = os.getenv("INDEX_WHITELIST", "")
 INDEX_WHITELIST: list[str] = [
     path.strip() for path in _raw_whitelist.split(",") if path.strip()
 ]
+
+# Parse the comma-separated excluded extensions from .env
+_raw_excluded_exts = os.getenv("EXCLUDED_EXTENSIONS")
+if _raw_excluded_exts is None:
+    # Key doesn't exist in .env, use default list
+    EXCLUDED_EXTENSIONS = [ext.lower() for ext in DEFAULT_EXCLUDED_EXTENSIONS]
+else:
+    EXCLUDED_EXTENSIONS = [
+        ext.strip().lower() for ext in _raw_excluded_exts.split(",") if ext.strip()
+    ]
 
 
 def update_whitelist(path: str, remove: bool = False) -> None:
@@ -135,6 +162,44 @@ def update_whitelist(path: str, remove: bool = False) -> None:
             if lines and not lines[-1].endswith("\n"):
                 lines.append("\n")
             lines.append(f"INDEX_WHITELIST={new_val}\n")
+            
+        with open(_ACTIVE_ENV_PATH, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+
+def update_excluded_extensions(ext: str, remove: bool = False) -> None:
+    """Updates the excluded extensions list in memory and persists to the active .env file."""
+    global EXCLUDED_EXTENSIONS
+    ext = ext.strip().lower()
+    # Ensure it starts with a dot if not empty
+    if ext and not ext.startswith("."):
+        ext = f".{ext}"
+    
+    if remove:
+        if ext in EXCLUDED_EXTENSIONS:
+            EXCLUDED_EXTENSIONS.remove(ext)
+    else:
+        if ext and ext not in EXCLUDED_EXTENSIONS:
+            EXCLUDED_EXTENSIONS.append(ext)
+
+    # Persist to .env
+    if _ACTIVE_ENV_PATH and _ACTIVE_ENV_PATH.exists():
+        new_val = ",".join(EXCLUDED_EXTENSIONS)
+        
+        with open(_ACTIVE_ENV_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            
+        found = False
+        for i, line in enumerate(lines):
+            if line.startswith("EXCLUDED_EXTENSIONS="):
+                lines[i] = f"EXCLUDED_EXTENSIONS={new_val}\n"
+                found = True
+                break
+                
+        if not found:
+            # Ensure file ends with a newline before appending
+            if lines and not lines[-1].endswith("\n"):
+                lines.append("\n")
+            lines.append(f"EXCLUDED_EXTENSIONS={new_val}\n")
             
         with open(_ACTIVE_ENV_PATH, "w", encoding="utf-8") as f:
             f.writelines(lines)

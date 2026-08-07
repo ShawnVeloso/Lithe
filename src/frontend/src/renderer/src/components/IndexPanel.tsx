@@ -43,10 +43,12 @@ function isDriveRoot(fullPath: string): boolean {
 // ---------------------------------------------------------------------------
 function IndexPanel({ status, lastEventTimestamp }: IndexPanelProps): JSX.Element {
   const [manualInput, setManualInput] = useState('')
+  const [manualExtInput, setManualExtInput] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
 
   const watcherActive = status?.watcher_active ?? false
   const dirs = status?.watched_dirs ?? []
+  const extensions = status?.excluded_extensions ?? []
   const lastEvent = lastEventTimestamp ?? status?.last_event_time ?? null
 
   const handleAddDialog = async (): Promise<void> => {
@@ -84,6 +86,31 @@ function IndexPanel({ status, lastEventTimestamp }: IndexPanelProps): JSX.Elemen
       await window.litheAPI.removeWhitelistPath(path)
     } catch (err) {
       console.error('Failed to remove path:', err)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleAddExt = async (): Promise<void> => {
+    const trimmed = manualExtInput.trim()
+    if (!trimmed) return
+    try {
+      setIsProcessing(true)
+      await window.litheAPI.addExcludedExtension(trimmed)
+      setManualExtInput('')
+    } catch (err) {
+      console.error('Failed to add extension:', err)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleRemoveExt = async (ext: string): Promise<void> => {
+    try {
+      setIsProcessing(true)
+      await window.litheAPI.removeExcludedExtension(ext)
+    } catch (err) {
+      console.error('Failed to remove extension:', err)
     } finally {
       setIsProcessing(false)
     }
@@ -146,6 +173,36 @@ function IndexPanel({ status, lastEventTimestamp }: IndexPanelProps): JSX.Elemen
               if (e.key === 'Enter') handleManualAdd()
             }}
             disabled={isProcessing}
+          />
+        </div>
+
+        <div className="index-extensions">
+          <span className="index-manual-prompt">&gt;</span>
+          <span style={{ color: 'var(--text-dim)', fontSize: '11px', fontWeight: 'bold' }}>ignore:</span>
+          {extensions.map(ext => (
+            <span key={ext} className="extension-tag">
+              {ext}
+              <button 
+                onClick={() => handleRemoveExt(ext)} 
+                className="extension-tag__remove" 
+                disabled={isProcessing}
+                title="Remove extension"
+              >
+                [x]
+              </button>
+            </span>
+          ))}
+          <input
+            type="text"
+            className="index-manual-field"
+            placeholder=".ext"
+            value={manualExtInput}
+            onChange={(e) => setManualExtInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleAddExt()
+            }}
+            disabled={isProcessing}
+            style={{ minWidth: '40px', borderBottom: 'none', padding: 0 }}
           />
         </div>
 
