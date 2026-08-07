@@ -145,3 +145,4 @@
 - [x] **Diff Card Rendering:** `ToolProposalCard.tsx` component renders diff strings for tool proposals, allowing the user to ACCEPT or REJECT before execution resumes.
 - [x] **Semantic Color Fixes:** Fixed `--success` drift in chat (green is only for actual success events, standard text uses `--text-dim` or `--text`).
 - [x] **Live Token Telemetry:** `brain.py` extracts LLM token usage metadata, passed through `/api/status` to populate the `[03] SYSTEM` panel.
+- [x] **Live Watcher Log Console:** Created `broadcaster.py` to stream indexing/removal events. Exposed `/ws/watcher-log` WebSocket in `server.py` with 100ms batching and a 500-event history ring buffer. Built an expandable `system-log-drawer` in `SystemPanel.tsx` with autoscroll, filtering, and 1000-line DOM cap.

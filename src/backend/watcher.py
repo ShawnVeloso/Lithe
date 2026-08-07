@@ -21,8 +21,7 @@ from src.backend.config import INDEX_WHITELIST
 from src.backend.indexer import EXCLUDED_DIRS
 from src.backend.memory import upsert_files, delete_file_by_path
 from src.backend.heuristics import categorize_path
-
-from src.backend.heuristics import categorize_path
+from src.backend.broadcaster import broadcast_event
 
 # Module-level state
 last_event_time: float | None = None
@@ -106,6 +105,7 @@ class _LitheEventHandler(FileSystemEventHandler):
         if action == "delete":
             delete_file_by_path(path)
             print(f"[Lithe Watcher] Removed: {os.path.basename(path)}")
+            broadcast_event("removed", path)
 
         elif action == "upsert":
             try:
@@ -122,6 +122,7 @@ class _LitheEventHandler(FileSystemEventHandler):
                 }
                 upsert_files([file_record])
                 print(f"[Lithe Watcher] Indexed: {os.path.basename(path)}")
+                broadcast_event("indexed", path)
             except FileNotFoundError:
                 pass  # File was deleted before we could stat it
             except Exception as e:

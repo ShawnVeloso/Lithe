@@ -15,8 +15,9 @@ Run:
 
 import threading
 
+import asyncio
 import uvicorn
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -146,6 +147,46 @@ async def status_endpoint():
         "tokens": last_token_counts,
     }
 
+
+@app.websocket("/ws/watcher-log")
+async def websocket_watcher_log(websocket: WebSocket):
+    """Streams file system events to the frontend UI."""
+    await websocket.accept()
+    
+    from src.backend.broadcaster import get_history, subscribe, unsubscribe
+    
+    # Send historical events immediately
+    history = get_history()
+    if history:
+        await websocket.send_json({"events": history})
+        
+    loop = asyncio.get_running_loop()
+    q = subscribe(loop)
+    
+    try:
+        while True:
+            # Batching rapid-fire events
+            batch = []
+            # Wait for at least one event
+            event = await q.get()
+            batch.append(event)
+            
+            # Grab any other events currently in the queue without waiting
+            while not q.empty():
+                batch.append(q.get_nowait())
+            
+            # Send the batch
+            if batch:
+                await websocket.send_json({"events": batch})
+                
+            # Throttle to max 10 messages per second to avoid flooding
+            await asyncio.sleep(0.1)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"[WebSocket] Error: {e}")
+    finally:
+        unsubscribe(q)
 
 # ---------------------------------------------------------------------------
 # Entry point

@@ -3,7 +3,7 @@
 start here
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-07T14:56 (PHT)
+> **Last Updated:** 2026-08-07T15:10 (PHT)
 
 ---
 
@@ -196,3 +196,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-07 | Antigravity | **UI Fixes — Unified Tool Confirmation UX:** Intercepted mutating LLM tool calls (`write_file`, `delete_file`, `rename_file`) in `brain.py` to pause execution and send a `tool_proposal` to the frontend. Implemented `ToolProposalCard.tsx` with diffs and ACCEPT/REJECT buttons. |
 | 2026-08-07 | Antigravity | **UI Fixes — Semantic Colors:** Fixed `--success` drift in chat, re-colored `lithe>` prefix to `--text-dim`. |
 | 2026-08-07 | Antigravity | **UI Fixes — System Panel:** Added `[03] SYSTEM` header to match conventions, extracted live LLM token counts in `brain.py`, and piped to `SystemPanel.tsx` via `/api/status`. |
+| 2026-08-07 | Antigravity | **Live Watcher Log Console:** Created `broadcaster.py` to stream indexing/removal events. Exposed `/ws/watcher-log` WebSocket in `server.py` with 100ms batching and a 500-event history ring buffer. Built an expandable `system-log-drawer` in `SystemPanel.tsx` with autoscroll, filtering, and 1000-line DOM cap. |
