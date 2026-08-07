@@ -160,5 +160,31 @@ def search_files_by_name(keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
         ]
 
 
+def get_file_count_by_directory(roots: List[str]) -> List[Dict[str, Any]]:
+    """Returns the number of indexed files under each root directory.
+
+    Used by the /api/status endpoint to feed the [01] INDEX HUD panel.
+
+    Args:
+        roots: List of whitelisted root directory paths.
+
+    Returns:
+        List of dicts with 'path' and 'file_count' keys.
+    """
+    results = []
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        for root in roots:
+            # Normalize to forward slashes for consistent LIKE matching
+            normalized = root.replace("\\", "/")
+            cursor.execute(
+                "SELECT COUNT(*) as cnt FROM files WHERE REPLACE(path, '\\', '/') LIKE ?",
+                (f"{normalized}%",),
+            )
+            row = cursor.fetchone()
+            results.append({"path": root, "file_count": row["cnt"] if row else 0})
+    return results
+
+
 # Ensure DB is initialized when this module is imported
 init_db()

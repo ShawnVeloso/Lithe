@@ -8,15 +8,18 @@ interface MessageBubbleProps {
 }
 
 // ---------------------------------------------------------------------------
-// MessageBubble — Individual chat message
+// MessageBubble — Terminal-style message with prefix
 // ---------------------------------------------------------------------------
 function MessageBubble({ message }: MessageBubbleProps): JSX.Element {
   const isUser = message.role === 'user'
+  const prefix = isUser ? 'user>' : 'lithe>'
+  const prefixClass = isUser ? 'message-prefix--user' : 'message-prefix--assistant'
 
   return (
-    <div className={`message-row message-row--${message.role}`}>
-      <div className={`message-bubble message-bubble--${message.role}`}>
-        {message.content}
+    <div className="message-row" id={`msg-${message.id}`}>
+      <div className="message-content">
+        <span className={`message-prefix ${prefixClass}`}>{prefix}</span>
+        <span className="message-text">{message.content}</span>
       </div>
     </div>
   )

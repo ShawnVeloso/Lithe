@@ -1,7 +1,9 @@
 # Lithe — Agent Log Index
 
+start here
+
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-06T19:50 (PHT)
+> **Last Updated:** 2026-08-07T13:52 (PHT)
 
 ---
 
@@ -69,7 +71,9 @@
 | [src/renderer/src/index.css](file:///d:/Lithe/src/frontend/src/renderer/src/index.css) | Design system — dark navy, glassmorphism, gradients, micro-animations |
 | [src/renderer/src/components/ChatWindow.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/components/ChatWindow.tsx) | Scrollable message feed, welcome screen, typing indicator |
 | [src/renderer/src/components/MessageBubble.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/components/MessageBubble.tsx) | Role-based message cards (user gradient / assistant glass) |
-| [src/renderer/src/components/ChatInput.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/components/ChatInput.tsx) | Auto-resizing textarea, Enter to send, disabled during loading |
+| [src/renderer/src/components/ChatInput.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/components/ChatInput.tsx) | Command-line style input with `>` prompt, monospace, flat `[SEND]` button |
+| [src/renderer/src/components/IndexPanel.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/components/IndexPanel.tsx) | [01] INDEX HUD panel — watched dirs, file counts, watcher status, last event |
+| [src/renderer/src/components/SystemPanel.tsx](file:///d:/Lithe/src/frontend/src/renderer/src/components/SystemPanel.tsx) | [03] SYSTEM HUD strip — server health, mode, safeword indicator, token placeholder |
 
 ---
 
@@ -182,3 +186,9 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-04 | Antigravity | **UPGRADE Phase 3.4:** Updated `server.py` startup — runs initial index then starts file watcher |
 | 2026-08-04 | Antigravity | **UPGRADE Phase 3.5:** Updated `brain.py` — `search_files` tool now shows `[category]` tags in results |
 | 2026-08-06 | Antigravity | **Documentation Audit:** Full sync of INDEX.md, FEATURES.md, and ARCHITECTURE.md — added UPGRADE Phase statuses, updated file manifest, added running instructions, expanded architecture notes, defined suggested next directions |
+| 2026-08-07 | Antigravity | **HUD Redesign — Backend:** Added `GET /api/status` endpoint to `server.py`, `get_file_count_by_directory()` to `memory.py`, exposed `last_event_time` in `watcher.py` — all read-only, feeds the new HUD panels |
+| 2026-08-07 | Antigravity | **HUD Redesign — Preload/Types:** Added `litheAPI.getStatus()` to preload API and `StatusResponse` to `env.d.ts` |
+| 2026-08-07 | Antigravity | **HUD Redesign — CSS:** Full replacement of `index.css` — amber accent, near-black palette, JetBrains Mono monospace stack, 0-2px radii, hairline borders, three-pane HUD grid layout |
+| 2026-08-07 | Antigravity | **HUD Redesign — Components:** Rebuilt `App.tsx` as three-pane HUD orchestrator, created `IndexPanel.tsx` and `SystemPanel.tsx`, restyled `ChatWindow.tsx` (boot screen + cursor indicator), `MessageBubble.tsx` (terminal prefixes), `ChatInput.tsx` (command-line style) |
+| 2026-08-07 | Antigravity | **HUD Redesign — Electron:** Updated `main/index.ts` — `backgroundColor: #08080a`, enabled resizing (min 900×600), default 1100×720 |
+| 2026-08-07 | Antigravity | **HUD Redesign — Font:** Swapped `index.html` from Inter to JetBrains Mono Google Font |

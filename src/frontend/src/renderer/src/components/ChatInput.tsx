@@ -9,7 +9,7 @@ interface ChatInputProps {
 }
 
 // ---------------------------------------------------------------------------
-// ChatInput — Text input + send button
+// ChatInput — Command-line style input with > prompt
 // ---------------------------------------------------------------------------
 function ChatInput({ onSend, disabled }: ChatInputProps): JSX.Element {
   const [value, setValue] = useState('')
@@ -50,18 +50,19 @@ function ChatInput({ onSend, disabled }: ChatInputProps): JSX.Element {
     // Auto-resize textarea
     const textarea = e.target
     textarea.style.height = 'auto'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 100)}px`
   }
 
   const canSend = value.trim().length > 0 && !disabled
 
   return (
     <div className="chat-input-container">
-      <div className="chat-input-wrapper">
+      <div className={`chat-input-wrapper${disabled ? ' chat-input-wrapper--disabled' : ''}`}>
+        <span className="chat-input-prompt">&gt;</span>
         <textarea
           ref={textareaRef}
           className="chat-input"
-          placeholder="Ask Lithe something..."
+          placeholder="type a command..."
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
@@ -76,7 +77,7 @@ function ChatInput({ onSend, disabled }: ChatInputProps): JSX.Element {
           aria-label="Send message"
           id="send-button"
         >
-          ↑
+          SEND
         </button>
       </div>
     </div>

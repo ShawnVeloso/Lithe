@@ -94,11 +94,13 @@ function createWindow(): BrowserWindow {
     : join(process.resourcesPath, 'icon.ico')
 
   const mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 700,
-    resizable: false,
+    width: 1100,
+    height: 720,
+    minWidth: 900,
+    minHeight: 600,
+    resizable: true,
     title: 'Lithe',
-    backgroundColor: '#0a0e1a',
+    backgroundColor: '#08080a',
     icon: iconPath,
     show: false,
     autoHideMenuBar: true,

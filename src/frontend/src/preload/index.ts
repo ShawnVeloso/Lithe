@@ -34,5 +34,22 @@ contextBridge.exposeInMainWorld('litheAPI', {
     } catch {
       return false
     }
+  },
+
+  /**
+   * Fetch live system status for HUD panels (INDEX + SYSTEM).
+   */
+  getStatus: async (): Promise<{
+    watcher_active: boolean
+    watched_dirs: Array<{ path: string; file_count: number }>
+    last_event_time: number | null
+  } | null> => {
+    try {
+      const response = await fetch(`${PYTHON_SERVER_URL}/api/status`)
+      if (!response.ok) return null
+      return await response.json()
+    } catch {
+      return null
+    }
   }
 })
