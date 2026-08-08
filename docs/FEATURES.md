@@ -156,3 +156,15 @@
 - [x] **Smart Extension Filtering (Frontend):** Extension exclusion UI in `IndexPanel.tsx` renders strictly inline using Flexbox with a fixed-height scrollable container to gracefully handle the large default tag list.
 - [x] **Startup Reconciliation:** `indexer.py` fetches all indexed files (`{path: modified_at}`) from SQLite before walking. Skips DB upserts for unchanged files. Cleans up missing or newly excluded files automatically.
 - [x] **Summarized Logging:** Startup bulk scans now print a single reconciliation summary (e.g., `reconciled: 12 new/modified, 3 removed, 141074 unchanged`) instead of streaming events. Live watcher events are unaffected.
+
+## U-08.1 — Minor Bugfixes & Guardrail Hardening
+**Rationale:** The LLM was occasionally hallucinating instead of using the local RAG tools and ignoring C:\ drive scan restrictions in edge cases.
+**Implementation:**
+- [x] **Enforced RAG Pipeline:** Updated `CANDID_SYSTEM_PROMPT` and `search_files` docstring in `brain.py` to strictly mandate using the database search tool when asked about user files or keywords.
+- [x] **Hard Guardrails:** Appended a strict refusal condition to the system prompt to universally block recursive root drive scans (e.g., `C:\`) without providing code workarounds, unless overridden by the safeword.
+
+## U-09 — Fast-Fail Fallback & Active Engine Telemetry
+**Rationale:** The Gemini API fallback logic was taking too long (60s) to route to Ollama when offline, and the UI lacked transparency about which compute engine generated the response.
+**Implementation:**
+- [x] **Fast-Fail Fallback (Backend):** Enforced a strict 5.0-second timeout in `brain.py`'s `genai.Client(http_options={'timeout': 5.0})` to instantly route failed connections to local compute.
+- [x] **Active Engine Telemetry (Full Stack):** Injected a global `active_engine` tracker into `brain.py`, exposed via `/api/status`, and dynamically rendered an inline `[Engine: Gemini]` or blue `[Engine: Ollama (Local)]` indicator into the header of `SystemPanel.tsx`.

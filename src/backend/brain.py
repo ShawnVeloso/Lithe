@@ -39,11 +39,12 @@ _pending_tool_map = None
 
 # Global state for telemetry
 last_token_counts = {"prompt": 0, "candidates": 0, "total": 0}
+active_engine = "gemini"
 
 # ---------------------------------------------------------------------------
 # Gemini client (initialized once at module load)
 # ---------------------------------------------------------------------------
-_client = genai.Client(api_key=GEMINI_API_KEY)
+_client = genai.Client(api_key=GEMINI_API_KEY, http_options={'timeout': 5.0})
 
 
 # ---------------------------------------------------------------------------
@@ -162,8 +163,8 @@ def chat(user_message: str) -> str:
 
     def search_files(keyword: str) -> str:
         """Searches the local file index for files matching a keyword.
-        Use this when the user asks to find, locate, or look for a file
-        by name, even if they don't know the exact filename or extension.
+        You MUST call this tool whenever the user asks which files contain a word, 
+        or asks to locate files, even if they don't know the exact filename or extension.
         Args:
             keyword: A partial filename or keyword to search for.
         """
@@ -202,11 +203,13 @@ def chat(user_message: str) -> str:
 
     # --- Call Gemini ---
     try:
+        global active_engine
         response = _client.models.generate_content(
             model=GEMINI_MODEL,
             contents=contents,
             config=config,
         )
+        active_engine = "gemini"
 
         # --- Handle potential Function Calls ---
         if response.function_calls:
@@ -303,6 +306,7 @@ def chat(user_message: str) -> str:
         return response.text
 
     except (errors.APIError, httpx.TimeoutException, Exception) as e:
+        active_engine = "ollama"
         error_name = type(e).__name__
         print(f"[Lithe] Gemini connection failed ({error_name}): {e}")
         print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
@@ -346,11 +350,13 @@ def handle_tool_response(accept: bool) -> dict | str:
     )
 
     try:
+        global active_engine
         response = _client.models.generate_content(
             model=GEMINI_MODEL,
             contents=_pending_session,
             config=_pending_config,
         )
+        active_engine = "gemini"
         
         # Update telemetry
         if response.usage_metadata:
