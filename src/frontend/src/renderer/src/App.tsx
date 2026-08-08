@@ -21,6 +21,7 @@ export interface Message {
     args: any
     diff: string
   }
+  tool_resolution?: 'accepted' | 'rejected'
 }
 
 // Safeword constant (matches backend: prompts/system_prompt.py)
@@ -160,6 +161,18 @@ function App(): JSX.Element {
     setError(null)
     setIsLoading(true)
     
+    // Mark the last pending tool proposal as resolved
+    setMessages((prev) => {
+      const msgs = [...prev]
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].role === 'assistant' && msgs[i].tool_proposal && !msgs[i].tool_resolution) {
+          msgs[i] = { ...msgs[i], tool_resolution: accept ? 'accepted' : 'rejected' }
+          break
+        }
+      }
+      return msgs
+    })
+
     // Optimistically add the user's choice as a system-like message
     const decisionMsg: Message = {
       id: `user-decision-${Date.now()}`,

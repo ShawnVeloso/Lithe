@@ -3,7 +3,7 @@
 start here
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-07T22:11 (PHT)
+> **Last Updated:** 2026-08-09T00:35 (PHT)
 
 ---
 
@@ -169,6 +169,8 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-07-12 | Antigravity | Implemented F-04 (RAG & File Context) |
 | 2026-08-03 | Antigravity | Updated outdated documentation states |
 | 2026-08-03 | Antigravity | Implemented Customization Rules for AI Agents (.agents/AGENTS.md) |
+| 2026-08-07 | AntiGravity | Fixed Gemini timeout issue (removed hardcoded 5s limit) & refactored tool schema to fix 400 Bad Request errors. |
+| 2026-08-08 | AntiGravity | Fixed Lithe hallucinating tool execution by adding `disable=True` to `AutomaticFunctionCallingConfig` in `brain.py`. Found that the new `google.genai` SDK was auto-executing Python tools under the hood, silently bypassing `ToolProposalCard` UI interception and creating files directly. Also added `[TOOL EXECUTED]` log lines to `tools.py` for auditability, and patched `COMPLIANT_SYSTEM_PROMPT` to properly route tool instructions during safeword mode. |
 | 2026-08-03 | Antigravity | Fixed Gemini timeout — removed broken custom http_options from GenerateContentConfig; SDK defaults work correctly |
 | 2026-08-03 | Antigravity | Added auto-indexing on server startup in server.py — no more manual POST /api/index needed |
 | 2026-08-03 | Antigravity | Added search_files LLM tool (memory.py + brain.py) — fuzzy file search by keyword via function calling |
@@ -198,3 +200,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-07 | Antigravity | **UI Fixes — System Panel:** Added `[03] SYSTEM` header to match conventions, extracted live LLM token counts in `brain.py`, and piped to `SystemPanel.tsx` via `/api/status`. |
 | 2026-08-07 | Antigravity | **Live Watcher Log Console:** Created `broadcaster.py` to stream indexing/removal events. Exposed `/ws/watcher-log` WebSocket in `server.py` with 100ms batching and a 500-event history ring buffer. Built an expandable `system-log-drawer` in `SystemPanel.tsx` with autoscroll, filtering, and 1000-line DOM cap. |
 | 2026-08-07 | Antigravity | **UI Fixes — Themed Title Bar:** Added `titleBarStyle: 'hidden'` and `titleBarOverlay` to `index.ts`. Replaced default header with draggable custom title bar in `App.tsx` and `index.css`. Upgraded brand logo with `lithe-mark-hero.svg` and `icon.ico`. Fixed `[01] INDEX`'s `last event` missing updates by lifting WebSocket to `App.tsx`. Fixed port binding conflict by pinging server health before spawning `pythonProcess`. |
+| 2026-08-08 | Antigravity | **Bugfix:** Injected strict tool execution rules into `system_prompt.py` to prevent text-based confirmation loops. Fixed context-dropping issue by implementing a global `_chat_history` list in `brain.py` to maintain standard conversational context across API requests. |

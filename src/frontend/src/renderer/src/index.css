@@ -605,6 +605,30 @@ body {
   cursor: not-allowed;
 }
 
+.tool-action-resolved {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 8px;
+  font-family: 'Berkeley Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: bold;
+  border-radius: 4px;
+}
+
+.tool-action-resolved--accepted {
+  background: var(--bg-surface);
+  color: #10b981;
+  border: 1px solid #064e3b;
+}
+
+.tool-action-resolved--rejected {
+  background: var(--bg-surface);
+  color: #ef4444;
+  border: 1px solid #7f1d1d;
+}
+
 /* --- Typing Indicator (Cursor blink) --- */
 .typing-indicator {
   display: flex;
