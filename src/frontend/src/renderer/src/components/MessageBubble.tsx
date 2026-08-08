@@ -25,6 +25,7 @@ function MessageBubble({ message, onToolResponse }: MessageBubbleProps): JSX.Ele
         {message.tool_proposal ? (
           <ToolProposalCard 
             proposal={message.tool_proposal} 
+            resolution={message.tool_resolution}
             onRespond={onToolResponse || (async () => {})}
           />
         ) : (

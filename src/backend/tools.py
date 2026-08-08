@@ -74,6 +74,7 @@ def execute_rename(source: str, destination: str, safeword_active: bool) -> str:
     """
     Executes a file or directory rename/move operation.
     """
+    print(f"[TOOL EXECUTED] rename_file: {source} -> {destination}")
     if not safeword_active:
         return (
             "ERROR: User permission required. Tell the user you cannot execute "
@@ -106,6 +107,7 @@ def execute_delete(path: str, safeword_active: bool) -> str:
     """
     Executes a file deletion operation.
     """
+    print(f"[TOOL EXECUTED] delete_file: {path}")
     if not safeword_active:
         return (
             "ERROR: User permission required. Tell the user you cannot execute "
@@ -138,6 +140,7 @@ def execute_write(path: str, content: str, mode: str, safeword_active: bool) -> 
     """
     Executes a file write operation (append or overwrite).
     """
+    print(f"[TOOL EXECUTED] write_file: {path}")
     # Note: we check safeword in brain.py instead now, but keeping the signature
     # for consistency until the unified diff flow replaces it.
     

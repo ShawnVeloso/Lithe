@@ -37,6 +37,9 @@ _pending_tool_calls = None
 _pending_config = None
 _pending_tool_map = None
 
+# Global state for conversation history
+_chat_history: list[types.Content] = []
+
 # Global state for telemetry
 last_token_counts = {"prompt": 0, "candidates": 0, "total": 0}
 active_engine = "gemini"
@@ -44,7 +47,7 @@ active_engine = "gemini"
 # ---------------------------------------------------------------------------
 # Gemini client (initialized once at module load)
 # ---------------------------------------------------------------------------
-_client = genai.Client(api_key=GEMINI_API_KEY, http_options={'timeout': 5.0})
+_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +171,7 @@ def chat(user_message: str) -> str:
         Args:
             keyword: A partial filename or keyword to search for.
         """
+        print(f"[TOOL EXECUTED] search_files: {keyword}")
         results = search_files_by_name(keyword)
         if not results:
             return f"No files found matching '{keyword}' in the indexed directories."
@@ -191,15 +195,18 @@ def chat(user_message: str) -> str:
         temperature=0.7,
         max_output_tokens=2048,
         tools=tools,
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
     )
 
     # --- Initialize conversation history for this request ---
-    contents = [
+    global _chat_history
+    _chat_history.append(
         types.Content(
             role="user",
             parts=[types.Part.from_text(text=cleaned_message)]
         )
-    ]
+    )
+    contents = _chat_history.copy()
 
     # --- Call Gemini ---
     try:
@@ -219,7 +226,7 @@ def chat(user_message: str) -> str:
             # --- Check if it's a mutating tool that needs confirmation ---
             if call.name in ["rename_file", "delete_file", "write_file"]:
                 global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map
-                _pending_session = contents
+                _pending_session = contents.copy()
                 _pending_session.append(response.candidates[0].content)
                 _pending_tool_calls = response.function_calls
                 _pending_config = config
@@ -293,6 +300,15 @@ def chat(user_message: str) -> str:
                 contents=contents,
                 config=config,
             )
+        else:
+            # Check for hallucinated execution: if the user implied a file mutation but no tool was called.
+            user_msg = cleaned_message.lower()
+            mutating_intent = any(kw in user_msg for kw in ["create", "write", "rename", "delete", "make a file"]) and any(kw in user_msg for kw in ["file", ".txt", "folder"])
+            resp_lower = response.text.lower()
+            claimed_success = any(kw in resp_lower for kw in ["i have created", "i've created", "is created", "has been created", "renamed", "deleted", "successfully", "done"])
+            
+            if mutating_intent and claimed_success:
+                return "ERROR: The LLM generated a narrative claiming to have modified files, but failed to actually invoke the system tool. Please rephrase your request to explicitly command tool execution."
 
         # Update telemetry
         if response.usage_metadata:
@@ -303,6 +319,9 @@ def chat(user_message: str) -> str:
                 "total": response.usage_metadata.total_token_count
             }
 
+        _chat_history = contents.copy()
+        _chat_history.append(response.candidates[0].content)
+
         return response.text
 
     except (errors.APIError, httpx.TimeoutException, Exception) as e:
@@ -310,12 +329,19 @@ def chat(user_message: str) -> str:
         error_name = type(e).__name__
         print(f"[Lithe] Gemini connection failed ({error_name}): {e}")
         print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
-        return _ollama_chat(system_prompt, cleaned_message)
+        ollama_response = _ollama_chat(system_prompt, cleaned_message)
+        _chat_history.append(
+            types.Content(
+                role="model",
+                parts=[types.Part.from_text(text=ollama_response)]
+            )
+        )
+        return ollama_response
 
 
 def handle_tool_response(accept: bool) -> dict | str:
     """Resumes the pending session after user accepts or rejects a tool."""
-    global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map
+    global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map, _chat_history
     if not _pending_session or not _pending_tool_calls:
         return "Error: No pending tool call found."
 
@@ -366,6 +392,9 @@ def handle_tool_response(accept: bool) -> dict | str:
                 "candidates": response.usage_metadata.candidates_token_count,
                 "total": response.usage_metadata.total_token_count
             }
+
+        _chat_history = _pending_session.copy()
+        _chat_history.append(response.candidates[0].content)
 
         # Clear state
         _pending_session = None

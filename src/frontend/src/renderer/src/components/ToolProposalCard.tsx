@@ -6,10 +6,11 @@ interface ToolProposalProps {
     args: any
     diff: string
   }
+  resolution?: 'accepted' | 'rejected'
   onRespond: (accept: boolean) => Promise<void>
 }
 
-export default function ToolProposalCard({ proposal, onRespond }: ToolProposalProps): JSX.Element {
+export default function ToolProposalCard({ proposal, resolution, onRespond }: ToolProposalProps): JSX.Element {
   const [isResponding, setIsResponding] = useState(false)
   
   const handleResponse = async (accept: boolean): Promise<void> => {
@@ -55,20 +56,28 @@ export default function ToolProposalCard({ proposal, onRespond }: ToolProposalPr
         </pre>
       </div>
       <div className="tool-proposal__actions">
-        <button 
-          className="tool-action-btn tool-action-btn--accept"
-          onClick={() => handleResponse(true)}
-          disabled={isResponding}
-        >
-          [Y] ACCEPT
-        </button>
-        <button 
-          className="tool-action-btn tool-action-btn--reject"
-          onClick={() => handleResponse(false)}
-          disabled={isResponding}
-        >
-          [N] REJECT
-        </button>
+        {resolution ? (
+          <div className={`tool-action-resolved tool-action-resolved--${resolution}`}>
+            {resolution === 'accepted' ? '✓ ACCEPTED' : '✗ REJECTED'}
+          </div>
+        ) : (
+          <>
+            <button 
+              className="tool-action-btn tool-action-btn--accept"
+              onClick={() => handleResponse(true)}
+              disabled={isResponding}
+            >
+              [Y] ACCEPT
+            </button>
+            <button 
+              className="tool-action-btn tool-action-btn--reject"
+              onClick={() => handleResponse(false)}
+              disabled={isResponding}
+            >
+              [N] REJECT
+            </button>
+          </>
+        )}
       </div>
     </div>
   )

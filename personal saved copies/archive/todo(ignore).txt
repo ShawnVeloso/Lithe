@@ -1,0 +1,29 @@
+Good diagnosis on Antigravity's part — the automatic_function_calling discovery is a legitimate and 
+specific root cause, and disabling it is the right fix for why the ToolProposalCard was never appearing. 
+The missing tool rules in COMPLIANT_SYSTEM_PROMPT is also a real, well-targeted find — that explains a chunk 
+of the safeword-mode fabrication.
+
+But there's a gap in the story worth pushing on before you call this closed:
+
+If auto function calling was silently executing the real Python function in the background, 
+the file should have actually been written — even without the UI ever showing a confirmation card. 
+Silent auto-execution still executes. That's the whole point of the feature. So "auto function calling 
+hid the card" explains why you never saw the ToolProposalCard, but it doesn't by itself explain why Kirzten.txt never 
+landed on disk. Something else was going on for those cases — most likely one of:
+
+write_file/execute_write didn't exist yet at all (my original hypothesis) — auto-execution can't execute a tool that was never declared, so the model just talked, and there was nothing to run
+it existed but had a bug (bad path handling, silently swallowed exception, wrong directory) that made it a no-op
+the model genuinely never emitted a function call in those specific turns — true hallucination with no tool invocation attempted at all
+
+Antigravity's fix list (declared tools that were probably missing/broken, plus the new execute_write with logging) likely closes all three paths at once — so the end result may be right regardless. But I'd want to confirm that before trusting the "bug completely squashed" claim, because coding agents self-reporting a passing test is exactly the kind of claim that deserves the same skepticism you applied to Lithe itself.
+
+Concrete verification before you close this out:
+
+Don't trust the simulated test — run it live. Open the actual app, send the real Kirzten.txt request through the UI, and physically check D:\Lithe\Bug testing\dump_testers in Explorer afterward.
+Watch the server console during that test. You should see [TOOL EXECUTED] execute_write: ... print, then a ToolProposalCard should actually render in the UI requiring ACCEPT.
+Test all three original failure modes again, not just the happy path:
+Plain request (should now propose the tool, not refuse with "I cannot create a file that does not exist")
+The "harmful content" refusal case with the same odd string — see if it's gone or if it's a Gemini-side quirk that'll resurface
+Safeword request — confirm it still shows a confirmation card (per your U-07 design, safeword should skip debate, not skip confirmation) and that accepting it actually writes the file
+Ask Antigravity for the actual diff of execute_write/write_file in tools.py, not just the summary — confirm it has the same path-validation/circuit-breaker pattern as rename_file/delete_file, since that function's prior existence (or lack thereof) was never directly addressed in the summary.
+Sanity-check the automatic_function_calling config name against current google-genai SDK docs — Antigravity may be working from a slightly stale or hallucinated parameter shape. If the app throws on startup or the config is silently ignored, you'd get a false sense of security.
