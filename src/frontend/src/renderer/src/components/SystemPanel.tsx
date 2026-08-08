@@ -53,6 +53,11 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
         <span className="panel__label">
           <span className="panel__label-number">[03]</span>
           SYSTEM
+          {status?.active_engine && (
+            <span style={{ marginLeft: '12px', color: status.active_engine === 'ollama' ? 'var(--info)' : 'var(--text-dim)', textTransform: 'none' }}>
+              [Engine: {status.active_engine === 'ollama' ? 'Ollama (Local)' : 'Gemini'}]
+            </span>
+          )}
         </span>
         <button 
           className="header-action-btn system-toggle-btn"

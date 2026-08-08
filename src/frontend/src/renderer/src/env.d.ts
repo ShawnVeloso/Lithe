@@ -11,6 +11,7 @@ interface StatusResponse {
     input: number
     output: number
   } | null
+  active_engine?: string
 }
 
 interface LitheAPI {
