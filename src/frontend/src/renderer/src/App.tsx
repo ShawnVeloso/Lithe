@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import ChatWindow from './components/ChatWindow'
 import IndexPanel from './components/IndexPanel'
 import SystemPanel from './components/SystemPanel'
+import CommandPalette from './components/CommandPalette'
 import litheLogo from './assets/lithe-mark-hero.svg'
 
 // ---------------------------------------------------------------------------
@@ -199,6 +200,40 @@ function App(): JSX.Element {
     }
   }
 
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
+
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setIsCommandPaletteOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [])
+
+  const handleFocusChat = () => {
+    const chatInput = document.querySelector('.chat-input-area__field') as HTMLTextAreaElement
+    if (chatInput) chatInput.focus()
+  }
+
+  const handleFocusSystem = () => {
+    window.dispatchEvent(new CustomEvent('toggle-system-log'))
+  }
+
+  const handleAddIndex = async () => {
+    try {
+      const paths = await window.litheAPI.selectDirectory()
+      for (const p of paths) {
+        await window.litheAPI.addWhitelistPath(p)
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   return (
     <div className="app-shell">
       {/* Header bar / Custom Title Bar */}
@@ -225,6 +260,14 @@ function App(): JSX.Element {
 
       {/* System strip at the bottom */}
       <SystemPanel isOnline={isOnline} safewordActive={safewordActive} status={status} logs={logs} />
+      
+      <CommandPalette 
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onFocusChat={handleFocusChat}
+        onFocusSystem={handleFocusSystem}
+        onAddIndex={handleAddIndex}
+      />
     </div>
   )
 }

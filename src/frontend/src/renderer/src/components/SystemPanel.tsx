@@ -24,7 +24,11 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
   
   const logFeedRef = useRef<HTMLDivElement>(null)
 
-
+  useEffect(() => {
+    const handleToggle = () => setIsExpanded(prev => !prev)
+    window.addEventListener('toggle-system-log', handleToggle)
+    return () => window.removeEventListener('toggle-system-log', handleToggle)
+  }, [])
   // Autoscroll Logic
   useEffect(() => {
     if (autoScroll && logFeedRef.current) {
