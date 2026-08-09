@@ -162,6 +162,13 @@ def execute_write(path: str, content: str, mode: str, safeword_active: bool) -> 
     print(f"[TOOL EXECUTED] write_file: {path}")
     # Note: we check safeword in brain.py instead now, but keeping the signature
     # for consistency until the unified diff flow replaces it.
+    if not safeword_active:
+        return (
+            "ERROR: User permission required. Tell the user you cannot execute "
+            "this action without explicit permission. Instruct them to repeat "
+            "their request and include the safeword 'Override Lithe'."
+        )
+
     
     # --- Circuit Breaker: validate arguments ---
     path_err = _validate_path(path, "path")
