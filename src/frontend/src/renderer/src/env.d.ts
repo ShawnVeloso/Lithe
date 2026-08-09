@@ -20,7 +20,7 @@ interface StatusResponse {
 interface LitheAPI {
   chat: (message: string) => Promise<{response: string; tool_proposal?: any}>
   toolResponse: (accept: boolean) => Promise<{response: string; tool_proposal?: any}>
-  healthCheck: () => Promise<boolean>
+  healthCheck: () => Promise<{status: boolean, needs_onboarding?: boolean}>
   getStatus: () => Promise<StatusResponse>
   selectDirectory: () => Promise<string[]>
   addWhitelistPath: (path: string) => Promise<void>
@@ -32,6 +32,7 @@ interface LitheAPI {
   getUndoHistory: () => Promise<{history: Array<{id: number, tool_name: string, details_json: string, reversible: boolean, timestamp: number}>}>
   undoAction: (actionId: number) => Promise<{status: string}>
   getChatHistory: () => Promise<{history: Array<any>}>
+  submitApiKey: (apiKey: string) => Promise<void>
 }
 
 declare global {

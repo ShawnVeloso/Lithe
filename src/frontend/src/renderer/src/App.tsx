@@ -3,6 +3,7 @@ import ChatWindow from './components/ChatWindow'
 import IndexPanel from './components/IndexPanel'
 import SystemPanel from './components/SystemPanel'
 import CommandPalette from './components/CommandPalette'
+import OnboardingWizard from './components/OnboardingWizard'
 import litheLogo from './assets/lithe-mark-hero.svg'
 
 // ---------------------------------------------------------------------------
@@ -238,6 +239,10 @@ function App(): JSX.Element {
     } catch (err) {
       console.error(err)
     }
+  }
+
+  if (needsOnboarding) {
+    return <OnboardingWizard />
   }
 
   return (

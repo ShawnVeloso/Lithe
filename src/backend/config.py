@@ -48,25 +48,11 @@ if not _LOADED_ENV:
 # ---------------------------------------------------------------------------
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
+NEEDS_ONBOARDING: bool = False
+
 if not GEMINI_API_KEY:
-    # Provide context-appropriate instructions
-    if getattr(sys, 'frozen', False):
-        _env_location = _APPDATA_DIR / ".env"
-        sys.exit(
-            "[Lithe Config Error] GEMINI_API_KEY is not set.\n"
-            f"  1. Create a file at: {_env_location}\n"
-            "  2. Add this line: GEMINI_API_KEY=your_key_here\n"
-            "  3. Get your key from https://aistudio.google.com/apikey\n"
-            "  4. Re-launch Lithe."
-        )
-    else:
-        _dev_root = Path(__file__).resolve().parent.parent.parent
-        sys.exit(
-            "[Lithe Config Error] GEMINI_API_KEY is not set.\n"
-            f"  1. Copy '{_dev_root / '.env.example'}' to '{_dev_root / '.env'}'\n"
-            "  2. Paste your Gemini API key from https://aistudio.google.com/apikey\n"
-            "  3. Re-run the application."
-        )
+    NEEDS_ONBOARDING = True
+    print("[Lithe Config] GEMINI_API_KEY is not set. Enabling Onboarding Wizard.")
 
 # ---------------------------------------------------------------------------
 # Model configuration
