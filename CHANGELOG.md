@@ -6,6 +6,7 @@ Auto-generated from `docs/agent-logs/INDEX.md`.
 - **Feature 1:** Added `src/backend/changelog.py` script and a startup hook in `server.py` to auto-generate `CHANGELOG.md` at the project root based on this index file.
 - **Feature 2:** Added UI toggle in `SystemPanel.tsx` for a global session override safeword mode. Added `/api/config/safeword` endpoint in `server.py` and state in `brain.py` to track and enforce it without requiring the phrase per-message.
 - **Feature 3:** Added search input to `IndexPanel.tsx` calling `search_files_by_name()` from `memory.py` via a new `/api/search` endpoint in `server.py` to render file paths inline directly.
+- **Bugfix:** Fixed `NameError: name 'brain' is not defined` in `GET /api/status` — replaced individual-name import (`from src.backend.brain import ...`) with module import (`import src.backend.brain as brain`) to match the pattern used by `toggle_safeword`.
 
 ## 2026-08-08
 - Fixed Lithe hallucinating tool execution by adding `disable=True` to `AutomaticFunctionCallingConfig` in `brain.py`. Found that the new `google.genai` SDK was auto-executing Python tools under the hood, silently bypassing `ToolProposalCard` UI interception and creating files directly. Also added `[TOOL EXECUTED]` log lines to `tools.py` for auditability, and patched `COMPLIANT_SYSTEM_PROMPT` to properly route tool instructions during safeword mode.

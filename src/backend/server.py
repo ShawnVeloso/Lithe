@@ -177,7 +177,7 @@ async def search_endpoint(q: str):
 async def status_endpoint():
     """Returns background indexer status for the frontend HUD."""
     from src.backend.watcher import last_event_time, _observer
-    from src.backend.config import INDEX_WHITELIST, EXCLUDED_EXTENSIONS
+    from src.backend.config import INDEX_WHITELIST, EXCLUDED_EXTENSIONS, TOKEN_BUDGET_WARNING
     from src.backend.memory import get_file_count_by_directory
     import src.backend.brain as brain
 
@@ -189,6 +189,7 @@ async def status_endpoint():
         "excluded_extensions": EXCLUDED_EXTENSIONS,
         "last_event_time": last_event_time,
         "tokens": brain.last_token_counts,
+        "token_budget_warning": TOKEN_BUDGET_WARNING,
         "active_engine": brain.active_engine,
         "session_safeword_active": brain.session_safeword_active,
     }
