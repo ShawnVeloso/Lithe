@@ -172,6 +172,38 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
             <span className="system-stat__value">--</span>
           )}
         </div>
+
+        <span className="system-separator" />
+
+        {/* Undo Stack */}
+        <div className="system-stat">
+          <span
+            className="system-stat__value system-stat__value--accent"
+            style={{ cursor: 'pointer', opacity: 0.8 }}
+            onClick={async () => {
+              try {
+                const res = await window.litheAPI.getUndoHistory()
+                if (res.history.length > 0) {
+                  const action = res.history[0]
+                  if (action.reversible) {
+                    await window.litheAPI.undoAction(action.id)
+                    alert(`Undo successful: ${action.tool_name}`)
+                  } else {
+                    alert(`Cannot undo ${action.tool_name} (Action is not reversible)`)
+                  }
+                } else {
+                  alert('No actions to undo')
+                }
+              } catch (e) {
+                alert(`Undo failed: ${e}`)
+              }
+            }}
+            title="Undo last mutating tool action"
+          >
+            [⟲ undo]
+          </span>
+        </div>
+
       </div>
     </div>
   )

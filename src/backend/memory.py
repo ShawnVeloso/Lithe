@@ -238,6 +238,48 @@ def get_file_count_by_directory(roots: List[str]) -> List[Dict[str, Any]]:
             results.append({"path": root, "file_count": row["cnt"] if row else 0})
     return results
 
+import time
+
+def record_action(tool_name: str, details_json: str, reversible: bool = True) -> None:
+    """Records an action in the undo stack."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO action_history (tool_name, details_json, reversible, timestamp)
+            VALUES (?, ?, ?, ?)
+            """,
+            (tool_name, details_json, reversible, time.time())
+        )
+        conn.commit()
+
+def get_action_history(limit: int = 5) -> List[Dict[str, Any]]:
+    """Returns the most recent actions."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, tool_name, details_json, reversible, timestamp
+            FROM action_history
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (limit,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+def get_action_by_id(action_id: int) -> Dict[str, Any]:
+    """Retrieves a specific action."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM action_history WHERE id = ?", (action_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def delete_action(action_id: int) -> None:
+    """Removes an action from history (e.g. after undo)."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM action_history WHERE id = ?", (action_id,))
+        conn.commit()
 
 # Ensure DB is initialized when this module is imported
 init_db()

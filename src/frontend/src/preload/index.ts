@@ -150,12 +150,35 @@ contextBridge.exposeInMainWorld('litheAPI', {
   },
 
   /**
-   * Searches the index for files matching a keyword.
+   * (F-03) Global Search
    */
-  searchFiles: async (query: string): Promise<{results: any[]}> => {
+  searchFiles: async (query: string): Promise<{results: Array<any>}> => {
     const response = await fetch(`${PYTHON_SERVER_URL}/api/search?q=${encodeURIComponent(query)}`)
     if (!response.ok) {
-      throw new Error(`Failed to search files: ${response.statusText}`)
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    return await response.json()
+  },
+  
+  /**
+   * Undo API
+   */
+  getUndoHistory: async () => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/undo/history`)
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    return await response.json()
+  },
+
+  undoAction: async (actionId: number) => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/undo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action_id: actionId })
+    })
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
     }
     return await response.json()
   }

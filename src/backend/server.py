@@ -172,6 +172,59 @@ async def search_endpoint(q: str):
     results = search_files_by_name(q)
     return {"results": results}
 
+# ---------------------------------------------------------------------------
+# Undo Stack Endpoints (Feature 3)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/undo/history")
+async def undo_history_endpoint():
+    """Returns recent reversible actions."""
+    from src.backend.memory import get_action_history
+    return {"history": get_action_history()}
+
+from pydantic import BaseModel
+class UndoRequest(BaseModel):
+    action_id: int
+
+@app.post("/api/undo")
+async def undo_endpoint(request: UndoRequest):
+    """Reverts a specific action."""
+    from src.backend.memory import get_action_by_id, delete_action
+    import json
+    import os
+    
+    action = get_action_by_id(request.action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+        
+    if not action["reversible"]:
+        raise HTTPException(status_code=400, detail="Action is not reversible")
+        
+    details = json.loads(action["details_json"])
+    tool_name = action["tool_name"]
+    
+    try:
+        if tool_name == "rename_file":
+            os.rename(details["destination"], details["source"])
+        elif tool_name == "delete_file":
+            # Recreate file with old content
+            os.makedirs(os.path.dirname(os.path.abspath(details["path"])), exist_ok=True)
+            with open(details["path"], "w", encoding="utf-8") as f:
+                f.write(details["content"])
+        elif tool_name == "write_file":
+            if details["is_new"]:
+                if os.path.exists(details["path"]):
+                    os.remove(details["path"])
+            else:
+                with open(details["path"], "w", encoding="utf-8") as f:
+                    f.write(details["old_content"])
+                    
+        delete_action(request.action_id)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 @app.get("/api/status")
 async def status_endpoint():
