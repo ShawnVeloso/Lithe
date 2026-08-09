@@ -72,6 +72,7 @@ if not GEMINI_API_KEY:
 # Model configuration
 # ---------------------------------------------------------------------------
 GEMINI_MODEL: str = "gemini-3.6-flash"
+TOKEN_BUDGET_WARNING: int = int(os.getenv("TOKEN_BUDGET_WARNING", "1500000"))
 
 # ---------------------------------------------------------------------------
 # Ollama fallback configuration (Phase 2: Reliability)

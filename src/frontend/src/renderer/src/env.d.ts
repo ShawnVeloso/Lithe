@@ -8,11 +8,13 @@ interface StatusResponse {
   excluded_extensions: string[]
   last_event_time: number | null
   tokens: {
-    input: number
-    output: number
+    prompt: number
+    candidates: number
+    total: number
   } | null
-  active_engine?: string
-  session_safeword_active?: boolean
+  token_budget_warning: number | null
+  active_engine: string
+  session_safeword_active: boolean
 }
 
 interface LitheAPI {

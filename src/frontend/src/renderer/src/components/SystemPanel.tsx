@@ -157,9 +157,16 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
         {/* Token counts */}
         <div className="system-stat">
           <span className="system-stat__label">tokens:</span>
-          <span className="system-stat__value" title="Prompt / Candidates / Total">
-            {tokens ? `${tokens.prompt} / ${tokens.candidates} / ${tokens.total}` : '--'}
-          </span>
+          {tokens ? (
+            <span 
+              className={`system-stat__value ${status?.token_budget_warning && tokens.total > status.token_budget_warning ? 'system-stat__value--accent' : ''}`}
+              title={`Prompt: ${tokens.prompt} / Candidates: ${tokens.candidates} / Total: ${tokens.total} (Budget: ${status?.token_budget_warning || 'None'})`}
+            >
+              {tokens.total.toLocaleString()} {status?.token_budget_warning ? `/ ${status.token_budget_warning.toLocaleString()}` : ''}
+            </span>
+          ) : (
+            <span className="system-stat__value">--</span>
+          )}
         </div>
       </div>
     </div>
