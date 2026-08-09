@@ -113,6 +113,9 @@ def _ollama_chat(system_prompt: str, user_message: str) -> str:
     except Exception as e:
         return f"Error: Ollama fallback failed — {type(e).__name__}: {e}"
 
+# Global state for safeword
+session_safeword_active = False
+
 
 def chat(user_message: str) -> str:
     """Send a message to the Gemini LLM and return its response.
@@ -129,6 +132,9 @@ def chat(user_message: str) -> str:
     """
     # --- F-06: Safeword detection ---
     safeword_active, cleaned_message = detect_safeword(user_message)
+    global session_safeword_active
+    if session_safeword_active:
+        safeword_active = True
 
     # --- F-04: Inject File Context ---
     file_context = get_file_contexts(cleaned_message)

@@ -133,5 +133,30 @@ contextBridge.exposeInMainWorld('litheAPI', {
     if (!response.ok) {
       throw new Error(`Failed to remove extension: ${response.statusText}`)
     }
+  },
+
+  /**
+   * Toggles the session-wide safeword override.
+   */
+  toggleSafeword: async (active: boolean): Promise<void> => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/config/safeword`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active })
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to toggle safeword: ${response.statusText}`)
+    }
+  },
+
+  /**
+   * Searches the index for files matching a keyword.
+   */
+  searchFiles: async (query: string): Promise<{results: any[]}> => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/search?q=${encodeURIComponent(query)}`)
+    if (!response.ok) {
+      throw new Error(`Failed to search files: ${response.statusText}`)
+    }
+    return await response.json()
   }
 })

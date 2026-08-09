@@ -35,6 +35,8 @@ app = FastAPI(title="Lithe Backend", version="0.1.0")
 def auto_index_and_watch():
     """Index whitelisted directories on boot, then start the file watcher."""
     def _index_then_watch():
+        from src.backend.changelog import generate_changelog
+        generate_changelog()
         walk_and_index()
         start_watcher()
 
@@ -102,6 +104,16 @@ async def tool_response_endpoint(request: ToolResponseRequest):
     return ChatResponse(response=result)
 
 
+class SafewordToggleRequest(BaseModel):
+    active: bool
+
+@app.post("/api/config/safeword")
+async def toggle_safeword(request: SafewordToggleRequest):
+    import src.backend.brain as brain
+    brain.session_safeword_active = request.active
+    return {"status": "ok", "session_safeword_active": brain.session_safeword_active}
+
+
 @app.post("/api/index")
 async def index_endpoint(background_tasks: BackgroundTasks):
     """Trigger the local directory indexer in the background."""
@@ -153,6 +165,14 @@ async def remove_extension_endpoint(request: ExtensionRequest, background_tasks:
     return {"status": "removed", "ext": request.ext}
 
 
+@app.get("/api/search")
+async def search_endpoint(q: str):
+    """Direct search against the file index."""
+    from src.backend.memory import search_files_by_name
+    results = search_files_by_name(q)
+    return {"results": results}
+
+
 @app.get("/api/status")
 async def status_endpoint():
     """Returns background indexer status for the frontend HUD."""
@@ -170,6 +190,7 @@ async def status_endpoint():
         "last_event_time": last_event_time,
         "tokens": last_token_counts,
         "active_engine": active_engine,
+        "session_safeword_active": getattr(brain, "session_safeword_active", False),
     }
 
 

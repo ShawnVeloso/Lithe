@@ -12,6 +12,7 @@ interface StatusResponse {
     output: number
   } | null
   active_engine?: string
+  session_safeword_active?: boolean
 }
 
 interface LitheAPI {
@@ -24,6 +25,8 @@ interface LitheAPI {
   removeWhitelistPath: (path: string) => Promise<void>
   addExcludedExtension: (ext: string) => Promise<void>
   removeExcludedExtension: (ext: string) => Promise<void>
+  toggleSafeword: (active: boolean) => Promise<void>
+  searchFiles: (query: string) => Promise<{results: Array<{path: string, name: string, extension: string, size_bytes: number, category: string}>}>
 }
 
 declare global {

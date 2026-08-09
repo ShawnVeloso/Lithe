@@ -44,6 +44,8 @@ function isDriveRoot(fullPath: string): boolean {
 function IndexPanel({ status, lastEventTimestamp }: IndexPanelProps): JSX.Element {
   const [manualInput, setManualInput] = useState('')
   const [manualExtInput, setManualExtInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<Array<{path: string, name: string, category: string, size_bytes: number}>>([])
   const [isProcessing, setIsProcessing] = useState(false)
 
   const watcherActive = status?.watcher_active ?? false
@@ -116,6 +118,23 @@ function IndexPanel({ status, lastEventTimestamp }: IndexPanelProps): JSX.Elemen
     }
   }
 
+  const handleSearch = async (): Promise<void> => {
+    const trimmed = searchQuery.trim()
+    if (!trimmed) {
+      setSearchResults([])
+      return
+    }
+    try {
+      setIsProcessing(true)
+      const data = await window.litheAPI.searchFiles(trimmed)
+      setSearchResults(data.results || [])
+    } catch (err) {
+      console.error('Failed to search files:', err)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   return (
     <div className="panel index-panel" id="index-panel">
       <div className="panel__header">
@@ -133,6 +152,34 @@ function IndexPanel({ status, lastEventTimestamp }: IndexPanelProps): JSX.Elemen
         </button>
       </div>
       <div className="index-panel__content">
+        <div className="index-manual-input">
+          <span className="index-manual-prompt">&gt;</span>
+          <input
+            type="text"
+            className="index-manual-field"
+            placeholder="search indexed files..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSearch()
+            }}
+            disabled={isProcessing}
+          />
+        </div>
+        {searchResults.length > 0 && (
+          <div className="index-list" style={{ maxHeight: '150px', borderBottom: '1px solid var(--border)' }}>
+            {searchResults.map((res, i) => (
+              <div className="index-dir" key={i} title={res.path}>
+                <div className="index-dir__info" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <span className="index-dir__path" style={{ color: 'var(--accent)' }}>{res.name}</span>
+                  <span className="index-dir__count" style={{ fontSize: '10px' }}>
+                    {shortenPath(res.path)} {res.category && `[${res.category}]`} ({Math.round(res.size_bytes / 1024)} KB)
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="index-list">
           {dirs.length === 0 ? (
             <span className="index-status__row">whitelist is empty.</span>
