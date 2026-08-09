@@ -49,6 +49,49 @@ active_engine = "gemini"
 # ---------------------------------------------------------------------------
 _client = genai.Client(api_key=GEMINI_API_KEY)
 
+# --- Feature 4 (Tier 2): Persistent Chat History ---
+import uuid
+import json
+from src.backend.memory import save_message, get_chat_history
+
+def _load_history():
+    global _chat_history
+    _chat_history.clear()
+    for row in get_chat_history():
+        parts = []
+        if row["content"]:
+            parts.append(types.Part.from_text(text=row["content"]))
+        if row["tool_proposal_json"]:
+            call_data = json.loads(row["tool_proposal_json"])
+            parts.append(types.Part.from_function_call(name=call_data["name"], args=call_data["args"]))
+        if row["tool_resolution"]:
+            res_data = json.loads(row["tool_resolution"])
+            parts.append(types.Part.from_function_response(name=res_data["name"], response=res_data["response"]))
+        
+        if parts:
+            _chat_history.append(types.Content(role=row["role"], parts=parts))
+
+def _save_content(content_obj: types.Content):
+    try:
+        content_text = ""
+        tool_proposal_json = None
+        tool_resolution = None
+        for part in content_obj.parts:
+            if part.text:
+                content_text += part.text
+            elif part.function_call:
+                tool_proposal_json = json.dumps({"name": part.function_call.name, "args": part.function_call.args})
+            elif part.function_response:
+                tool_resolution = json.dumps({"name": part.function_response.name, "response": part.function_response.response})
+        save_message(str(uuid.uuid4()), content_obj.role, content_text, tool_proposal_json, tool_resolution)
+    except Exception as e:
+        print(f"Error saving chat history: {e}")
+
+try:
+    _load_history()
+except Exception as e:
+    print(f"Error loading chat history: {e}")
+
 
 # ---------------------------------------------------------------------------
 # Ollama fallback (Phase 2: Reliability)
@@ -206,12 +249,12 @@ def chat(user_message: str) -> str:
 
     # --- Initialize conversation history for this request ---
     global _chat_history
-    _chat_history.append(
-        types.Content(
-            role="user",
-            parts=[types.Part.from_text(text=cleaned_message)]
-        )
+    user_content = types.Content(
+        role="user",
+        parts=[types.Part.from_text(text=cleaned_message)]
     )
+    _chat_history.append(user_content)
+    _save_content(user_content)
     contents = _chat_history.copy()
 
     # --- Call Gemini ---
@@ -326,7 +369,9 @@ def chat(user_message: str) -> str:
             }
 
         _chat_history = contents.copy()
-        _chat_history.append(response.candidates[0].content)
+        model_content = response.candidates[0].content
+        _chat_history.append(model_content)
+        _save_content(model_content)
 
         return response.text
 
@@ -336,12 +381,12 @@ def chat(user_message: str) -> str:
         print(f"[Lithe] Gemini connection failed ({error_name}): {e}")
         print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
         ollama_response = _ollama_chat(system_prompt, cleaned_message)
-        _chat_history.append(
-            types.Content(
-                role="model",
-                parts=[types.Part.from_text(text=ollama_response)]
-            )
+        model_content = types.Content(
+            role="model",
+            parts=[types.Part.from_text(text=ollama_response)]
         )
+        _chat_history.append(model_content)
+        _save_content(model_content)
         return ollama_response
 
 
@@ -374,12 +419,12 @@ def handle_tool_response(accept: bool) -> dict | str:
             )
         )
 
-    _pending_session.append(
-        types.Content(
-            role="user",
-            parts=function_responses
-        )
+    user_tool_content = types.Content(
+        role="user",
+        parts=function_responses
     )
+    _pending_session.append(user_tool_content)
+    _save_content(user_tool_content)
 
     try:
         global active_engine
@@ -400,7 +445,9 @@ def handle_tool_response(accept: bool) -> dict | str:
             }
 
         _chat_history = _pending_session.copy()
-        _chat_history.append(response.candidates[0].content)
+        model_content = response.candidates[0].content
+        _chat_history.append(model_content)
+        _save_content(model_content)
 
         # Clear state
         _pending_session = None

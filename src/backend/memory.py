@@ -53,6 +53,33 @@ def init_db() -> None:
             """
         )
 
+        # --- Feature 3 (Tier 2): Undo Stack ---
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS action_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tool_name TEXT NOT NULL,
+                details_json TEXT NOT NULL,
+                reversible BOOLEAN NOT NULL DEFAULT 1,
+                timestamp REAL NOT NULL
+            )
+            """
+        )
+        
+        # --- Feature 4 (Tier 2): Persistent Chat History ---
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS messages (
+                id TEXT PRIMARY KEY,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tool_proposal_json TEXT,
+                tool_resolution TEXT,
+                timestamp REAL NOT NULL
+            )
+            """
+        )
+
         # --- Migration: add `category` column to existing databases ---
         existing_cols = [
             col[1] for col in cursor.execute("PRAGMA table_info(files)").fetchall()
@@ -280,6 +307,33 @@ def delete_action(action_id: int) -> None:
     with get_connection() as conn:
         conn.execute("DELETE FROM action_history WHERE id = ?", (action_id,))
         conn.commit()
+
+# ---------------------------------------------------------------------------
+# Feature 4: Persistent Chat History
+# ---------------------------------------------------------------------------
+
+def save_message(msg_id: str, role: str, content: str, tool_proposal_json: str = None, tool_resolution: str = None) -> None:
+    """Saves a message to the chat history."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO messages (id, role, content, tool_proposal_json, tool_resolution, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                content=excluded.content,
+                tool_proposal_json=excluded.tool_proposal_json,
+                tool_resolution=excluded.tool_resolution
+            """,
+            (msg_id, role, content, tool_proposal_json, tool_resolution, time.time())
+        )
+        conn.commit()
+
+def get_chat_history() -> List[Dict[str, Any]]:
+    """Retrieves the full chat history ordered by timestamp."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, role, content, tool_proposal_json, tool_resolution, timestamp FROM messages ORDER BY timestamp ASC")
+        return [dict(row) for row in cursor.fetchall()]
 
 # Ensure DB is initialized when this module is imported
 init_db()

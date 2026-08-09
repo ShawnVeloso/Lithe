@@ -31,6 +31,7 @@ interface LitheAPI {
   searchFiles: (query: string) => Promise<{results: Array<{path: string, name: string, extension: string, size_bytes: number, category: string}>}>
   getUndoHistory: () => Promise<{history: Array<{id: number, tool_name: string, details_json: string, reversible: boolean, timestamp: number}>}>
   undoAction: (actionId: number) => Promise<{status: string}>
+  getChatHistory: () => Promise<{history: Array<any>}>
 }
 
 declare global {

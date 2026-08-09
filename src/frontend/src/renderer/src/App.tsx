@@ -89,6 +89,12 @@ function App(): JSX.Element {
       try {
         const healthy = await window.litheAPI.healthCheck()
         setIsOnline(healthy)
+        if (healthy && messages.length === 0) {
+            const history = await window.litheAPI.getChatHistory()
+            if (history.history && history.history.length > 0) {
+                setMessages(history.history)
+            }
+        }
       } catch {
         setIsOnline(false)
       }
@@ -97,7 +103,7 @@ function App(): JSX.Element {
     checkHealth()
     const interval = setInterval(checkHealth, 10000)
     return () => clearInterval(interval)
-  }, [])
+  }, [messages.length])
 
   // Poll /api/status for HUD panel data (every 5s)
   useEffect(() => {

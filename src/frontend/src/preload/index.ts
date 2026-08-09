@@ -181,5 +181,13 @@ contextBridge.exposeInMainWorld('litheAPI', {
       throw new Error(`Server error: ${response.status} ${response.statusText}`)
     }
     return await response.json()
+  },
+
+  getChatHistory: async () => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/chat/history`)
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    return await response.json()
   }
 })
