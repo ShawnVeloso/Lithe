@@ -45,12 +45,16 @@ contextBridge.exposeInMainWorld('litheAPI', {
   /**
    * Check if the Python backend is running.
    */
-  healthCheck: async (): Promise<boolean> => {
+  healthCheck: async (): Promise<{status: boolean, needs_onboarding?: boolean}> => {
     try {
       const response = await fetch(`${PYTHON_SERVER_URL}/api/health`)
-      return response.ok
+      if (response.ok) {
+        const data = await response.json()
+        return { status: true, needs_onboarding: data.needs_onboarding }
+      }
+      return { status: false }
     } catch {
-      return false
+      return { status: false }
     }
   },
 
@@ -189,5 +193,18 @@ contextBridge.exposeInMainWorld('litheAPI', {
       throw new Error(`Server error: ${response.status} ${response.statusText}`)
     }
     return await response.json()
+  },
+
+  submitApiKey: async (apiKey: string) => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/onboarding`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: apiKey })
+    })
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    // Reload window after short delay so backend can restart or re-read
+    setTimeout(() => window.location.reload(), 1000)
   }
 })

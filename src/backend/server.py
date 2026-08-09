@@ -82,7 +82,30 @@ class ToolResponseRequest(BaseModel):
 @app.get("/api/health")
 async def health_check():
     """Readiness probe for the Electron main process."""
-    return {"status": "ok"}
+    from src.backend.config import NEEDS_ONBOARDING
+    return {"status": "ok", "needs_onboarding": NEEDS_ONBOARDING}
+
+class OnboardingRequest(BaseModel):
+    api_key: str
+
+@app.post("/api/onboarding")
+async def onboarding_endpoint(request: OnboardingRequest):
+    """Saves the API key to .env and restarts the server."""
+    from src.backend.config import _ACTIVE_ENV_PATH, _APPDATA_ENV
+    import sys
+    import os
+    import platform
+    
+    env_path = _ACTIVE_ENV_PATH or _APPDATA_ENV
+    
+    # Ensure directory exists
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Write to .env
+    with open(env_path, "a", encoding="utf-8") as f:
+        f.write(f"\nGEMINI_API_KEY={request.api_key}\n")
+        
+    return {"status": "ok", "message": "Key saved. Restarting..."}
 
 
 @app.post("/api/chat", response_model=ChatResponse)

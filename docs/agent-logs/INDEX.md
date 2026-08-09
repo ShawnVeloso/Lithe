@@ -3,7 +3,7 @@
 start here
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-09T22:25 (PHT)
+> **Last Updated:** 2026-08-09T22:30 (PHT)
 
 ---
 
@@ -209,3 +209,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-09 | Antigravity | **Feature 2 (Tier 2):** Added `CommandPalette.tsx` overlay accessible via `Ctrl+K`. Wired actions to focus chat, toggle the system log drawer, and trigger the index whitelist dialog. Styled to match the HUD aesthetic. |
 | 2026-08-09 | Antigravity | **Feature 3 (Tier 2):** Implemented Undo Stack for mutating tools (`rename`, `delete`, `write`). Added `action_history` table to `memory.py` and intercepted OS operations in `tools.py` to cache file contents pre-mutation. Added an undo button to `SystemPanel.tsx` connecting to new `/api/undo` endpoints. |
 | 2026-08-09 | Antigravity | **Feature 4 (Tier 2):** Implemented Persistent Chat History. Added `messages` table to `memory.py` and synchronized `_chat_history` in `brain.py` with the database. Exposed history via `/api/chat/history` endpoint in `server.py` and loaded it on application mount in `App.tsx`. |
+| 2026-08-09 | Antigravity | **Feature 5 (Tier 2):** Implemented Onboarding Wizard. Modified `config.py` to set `NEEDS_ONBOARDING` instead of `sys.exit()` on missing key. Added `/api/onboarding` to `server.py` to save `.env`. Created `OnboardingWizard.tsx` and wired it into `App.tsx` on first run if health check indicates missing configuration. |
