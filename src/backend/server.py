@@ -103,6 +103,30 @@ async def tool_response_endpoint(request: ToolResponseRequest):
         return ChatResponse(response="", tool_proposal=result.get("tool_proposal"))
     return ChatResponse(response=result)
 
+@app.get("/api/chat/history")
+async def chat_history_endpoint():
+    """Returns the persistent chat history."""
+    from src.backend.memory import get_chat_history
+    import json
+    
+    history = get_chat_history()
+    formatted = []
+    for row in history:
+        msg = {
+            "id": row["id"],
+            "role": row["role"],
+            "content": row["content"]
+        }
+        if row["tool_proposal_json"]:
+            proposal = json.loads(row["tool_proposal_json"])
+            msg["tool_proposal"] = proposal
+        if row["tool_resolution"]:
+            msg["tool_resolution"] = json.loads(row["tool_resolution"])
+            
+        formatted.append(msg)
+        
+    return {"history": formatted}
+
 
 class SafewordToggleRequest(BaseModel):
     active: bool
