@@ -37,3 +37,23 @@ Before you consider a task complete, verify:
 - [ ] Any new environment variables are documented.
 - [ ] Code runs successfully on a Windows environment (the user's OS).
 - [ ] `docs/agent-logs/INDEX.md` has been updated per `.agents/AGENTS.md` §2 — this is not optional, check it before ending your session.
+
+## 5. Git & Version Control
+
+* **One feature, one branch.** Before starting a task, create a branch off `main`
+  (e.g. `feature/undo-stack`, `fix/status-endpoint-brain-import`). Never commit
+  directly to `main`.
+* **One feature, one commit (or a tight series of small commits).** Do not bundle
+  unrelated changes into a single commit. Commit message format:
+  `<type>: <short description>` — e.g. `feat: add token budget indicator to SystemPanel`,
+  `fix: resolve NameError in /api/status endpoint`.
+* **Test before merging.** Confirm the app launches and the specific feature/fix
+  works before merging the branch into `main`.
+* **Open a PR, even solo.** Push the branch, open a pull request into `main` with a
+  short description of what changed and why. This creates a review checkpoint and a
+  searchable history, even with a single reviewer (you).
+* **Never commit secrets.** `.env`, API keys, and the SQLite DB must stay gitignored.
+  If a secret is ever accidentally committed and pushed, treat it as compromised —
+  rotate it immediately, don't just delete the commit.
+* **Log entries still apply.** Updating `docs/agent-logs/INDEX.md` per §2 is required
+  regardless of branch/PR status — it's a separate, parallel record.
