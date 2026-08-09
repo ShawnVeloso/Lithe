@@ -120,9 +120,9 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
         <div className="system-stat">
           <span className="system-stat__label">mode:</span>
           <span
-            className={`system-stat__value ${safewordActive ? 'system-stat__value--special' : 'system-stat__value--accent'}`}
+            className={`system-stat__value ${safewordActive || status?.session_safeword_active ? 'system-stat__value--special' : 'system-stat__value--accent'}`}
           >
-            {safewordActive ? '● compliant' : '● candid'}
+            {safewordActive || status?.session_safeword_active ? '● compliant' : '● candid'}
           </span>
         </div>
 
@@ -131,11 +131,25 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
         {/* Safeword indicator */}
         <div className="system-stat">
           <span className="system-stat__label">safeword:</span>
-          <span
-            className={`system-stat__value ${safewordActive ? 'system-stat__value--special' : ''}`}
-          >
-            {safewordActive ? '● active' : '○ inactive'}
-          </span>
+          {status?.session_safeword_active ? (
+            <span
+              className="system-stat__value system-stat__value--special"
+              style={{ cursor: 'pointer' }}
+              onClick={() => window.litheAPI.toggleSafeword(false)}
+              title="Disable session-wide safeword override"
+            >
+              [x] session override
+            </span>
+          ) : (
+            <span
+              className={`system-stat__value ${safewordActive ? 'system-stat__value--special' : ''}`}
+              style={{ cursor: 'pointer' }}
+              onClick={() => window.litheAPI.toggleSafeword(true)}
+              title="Enable session-wide safeword override"
+            >
+              {safewordActive ? '● active' : '○ inactive (click to override)'}
+            </span>
+          )}
         </div>
 
         <span className="system-separator" />

@@ -3,7 +3,7 @@
 start here
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-09T00:35 (PHT)
+> **Last Updated:** 2026-08-09T19:05 (PHT)
 
 ---
 
@@ -201,3 +201,6 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-07 | Antigravity | **Live Watcher Log Console:** Created `broadcaster.py` to stream indexing/removal events. Exposed `/ws/watcher-log` WebSocket in `server.py` with 100ms batching and a 500-event history ring buffer. Built an expandable `system-log-drawer` in `SystemPanel.tsx` with autoscroll, filtering, and 1000-line DOM cap. |
 | 2026-08-07 | Antigravity | **UI Fixes — Themed Title Bar:** Added `titleBarStyle: 'hidden'` and `titleBarOverlay` to `index.ts`. Replaced default header with draggable custom title bar in `App.tsx` and `index.css`. Upgraded brand logo with `lithe-mark-hero.svg` and `icon.ico`. Fixed `[01] INDEX`'s `last event` missing updates by lifting WebSocket to `App.tsx`. Fixed port binding conflict by pinging server health before spawning `pythonProcess`. |
 | 2026-08-08 | Antigravity | **Bugfix:** Injected strict tool execution rules into `system_prompt.py` to prevent text-based confirmation loops. Fixed context-dropping issue by implementing a global `_chat_history` list in `brain.py` to maintain standard conversational context across API requests. |
+| 2026-08-09 | Antigravity | **Feature 1:** Added `src/backend/changelog.py` script and a startup hook in `server.py` to auto-generate `CHANGELOG.md` at the project root based on this index file. |
+| 2026-08-09 | Antigravity | **Feature 2:** Added UI toggle in `SystemPanel.tsx` for a global session override safeword mode. Added `/api/config/safeword` endpoint in `server.py` and state in `brain.py` to track and enforce it without requiring the phrase per-message. |
+| 2026-08-09 | Antigravity | **Feature 3:** Added search input to `IndexPanel.tsx` calling `search_files_by_name()` from `memory.py` via a new `/api/search` endpoint in `server.py` to render file paths inline directly. |
