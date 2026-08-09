@@ -14,6 +14,8 @@ Safety features (Phase 1 — Circuit Breakers):
 
 import os
 import concurrent.futures
+import json
+from src.backend.memory import record_action
 
 # ---------------------------------------------------------------------------
 # Circuit Breaker configuration
@@ -95,6 +97,11 @@ def execute_rename(source: str, destination: str, safeword_active: bool) -> str:
 
     def _do_rename():
         os.rename(source, destination)
+        record_action(
+            "rename_file",
+            json.dumps({"source": source, "destination": destination}),
+            reversible=True
+        )
         return f"SUCCESS: Renamed/moved '{source}' to '{destination}'."
 
     try:
@@ -126,9 +133,21 @@ def execute_delete(path: str, safeword_active: bool) -> str:
     def _do_delete():
         if os.path.isdir(path):
             os.rmdir(path)
+            record_action(
+                "delete_file",
+                json.dumps({"path": path, "is_dir": True}),
+                reversible=False
+            )
             return f"SUCCESS: Deleted directory '{path}'."
         else:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
             os.remove(path)
+            record_action(
+                "delete_file",
+                json.dumps({"path": path, "is_dir": False, "content": content}),
+                reversible=True
+            )
             return f"SUCCESS: Deleted file '{path}'."
 
     try:
@@ -156,8 +175,26 @@ def execute_write(path: str, content: str, mode: str, safeword_active: bool) -> 
         file_mode = "a" if mode == "append" else "w"
         # Ensure parent directories exist
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        
+        is_new_file = not os.path.exists(path)
+        old_content = None
+        if not is_new_file and mode == "overwrite":
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                old_content = f.read()
+        elif not is_new_file and mode == "append":
+            # For append, we could just read the whole file or track length.
+            # To keep it simple and reversible, we just save the whole old content.
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                old_content = f.read()
+                
         with open(path, file_mode, encoding="utf-8") as f:
             f.write(content)
+            
+        record_action(
+            "write_file",
+            json.dumps({"path": path, "is_new": is_new_file, "old_content": old_content}),
+            reversible=True
+        )
         return f"SUCCESS: Wrote to file '{path}' in {mode} mode."
 
     try:
