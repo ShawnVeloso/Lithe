@@ -179,7 +179,7 @@ async def status_endpoint():
     from src.backend.watcher import last_event_time, _observer
     from src.backend.config import INDEX_WHITELIST, EXCLUDED_EXTENSIONS
     from src.backend.memory import get_file_count_by_directory
-    from src.backend.brain import last_token_counts, active_engine
+    import src.backend.brain as brain
 
     watcher_active = _observer is not None and _observer.is_alive()
 
@@ -188,9 +188,9 @@ async def status_endpoint():
         "watched_dirs": get_file_count_by_directory(INDEX_WHITELIST),
         "excluded_extensions": EXCLUDED_EXTENSIONS,
         "last_event_time": last_event_time,
-        "tokens": last_token_counts,
-        "active_engine": active_engine,
-        "session_safeword_active": getattr(brain, "session_safeword_active", False),
+        "tokens": brain.last_token_counts,
+        "active_engine": brain.active_engine,
+        "session_safeword_active": brain.session_safeword_active,
     }
 
 

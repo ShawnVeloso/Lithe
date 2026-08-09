@@ -3,7 +3,7 @@
 start here
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-09T19:05 (PHT)
+> **Last Updated:** 2026-08-09T20:05 (PHT)
 
 ---
 
@@ -204,3 +204,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-09 | Antigravity | **Feature 1:** Added `src/backend/changelog.py` script and a startup hook in `server.py` to auto-generate `CHANGELOG.md` at the project root based on this index file. |
 | 2026-08-09 | Antigravity | **Feature 2:** Added UI toggle in `SystemPanel.tsx` for a global session override safeword mode. Added `/api/config/safeword` endpoint in `server.py` and state in `brain.py` to track and enforce it without requiring the phrase per-message. |
 | 2026-08-09 | Antigravity | **Feature 3:** Added search input to `IndexPanel.tsx` calling `search_files_by_name()` from `memory.py` via a new `/api/search` endpoint in `server.py` to render file paths inline directly. |
+| 2026-08-09 | Antigravity | **Bugfix:** Fixed `NameError: name 'brain' is not defined` in `GET /api/status` — replaced individual-name import (`from src.backend.brain import ...`) with module import (`import src.backend.brain as brain`) to match the pattern used by `toggle_safeword`. |
