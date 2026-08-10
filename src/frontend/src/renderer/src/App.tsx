@@ -18,6 +18,7 @@ export interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  isStreaming?: boolean
   tool_proposal?: {
     name: string
     args: any
@@ -141,16 +142,39 @@ function App(): JSX.Element {
     setMessages((prev) => [...prev, userMessage])
     setIsLoading(true)
 
-    try {
-      const { response, tool_proposal } = await window.litheAPI.chat(content)
+    // Create a streaming placeholder for the assistant response
+    const streamingId = `assistant-streaming-${Date.now()}`
+    const streamingMessage: Message = {
+      id: streamingId,
+      role: 'assistant',
+      content: '',
+      isStreaming: true
+    }
+    setMessages((prev) => [...prev, streamingMessage])
 
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: response,
-        tool_proposal
-      }
-      setMessages((prev) => [...prev, assistantMessage])
+    try {
+      const { response, tool_proposal } = await window.litheAPI.chatStream(
+        content,
+        (token: string) => {
+          // Progressive token update — append each chunk to the streaming message
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === streamingId
+                ? { ...msg, content: msg.content + token }
+                : msg
+            )
+          )
+        }
+      )
+
+      // Finalize the streaming message
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === streamingId
+            ? { ...msg, content: response, isStreaming: false, tool_proposal }
+            : msg
+        )
+      )
 
       // Clear safeword state after the response if it was active
       if (hasSafeword) {
@@ -160,6 +184,8 @@ function App(): JSX.Element {
       const errorMsg = err instanceof Error ? err.message : 'Failed to get a response.'
       setError(errorMsg)
       setSafewordActive(false)
+      // Remove the empty streaming message on error
+      setMessages((prev) => prev.filter((msg) => msg.id !== streamingId))
     } finally {
       setIsLoading(false)
     }

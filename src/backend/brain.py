@@ -390,6 +390,283 @@ def chat(user_message: str) -> str:
         return ollama_response
 
 
+def chat_stream(user_message: str):
+    """Stream tokens from the Gemini LLM as they're generated.
+
+    Yields dicts suitable for SSE serialization:
+        {"type": "token", "content": "..."}   — a text delta
+        {"type": "tool_proposal", "proposal": {...}} — mutating tool needs confirmation
+        {"type": "done", "tokens": {...}}     — stream finished, telemetry attached
+
+    The tool-proposal interception logic mirrors chat(): mutating tools pause
+    execution and store pending state; read-only tools execute immediately.
+    """
+    # --- F-06: Safeword detection ---
+    safeword_active, cleaned_message = detect_safeword(user_message)
+    global session_safeword_active
+    if session_safeword_active:
+        safeword_active = True
+
+    # --- F-04: Inject File Context ---
+    file_context = get_file_contexts(cleaned_message)
+    if file_context:
+        cleaned_message += file_context
+
+    system_prompt = (
+        COMPLIANT_SYSTEM_PROMPT if safeword_active else CANDID_SYSTEM_PROMPT
+    )
+
+    # --- F-05: Dynamic Tool Wrappers (same as chat()) ---
+    def rename_file(source: str, destination: str) -> str:
+        """Renames a file or directory.
+        Args:
+            source: The absolute path of the file to rename.
+            destination: The new absolute path.
+        """
+        return execute_rename(source, destination, safeword_active=True)
+
+    def delete_file(path: str) -> str:
+        """Deletes a file or directory.
+        Args:
+            path: The absolute path of the file to delete.
+        """
+        return execute_delete(path, safeword_active=True)
+
+    def write_file(path: str, content: str, mode: str) -> str:
+        """Writes content to a file.
+        Args:
+            path: The absolute path of the file to write to.
+            content: The text content to write.
+            mode: 'append' to add to the end of the file, or 'overwrite' to replace it entirely.
+        """
+        return execute_write(path, content, mode, safeword_active=True)
+
+    def search_files(keyword: str) -> str:
+        """Searches the local file index for files matching a keyword.
+        You MUST call this tool whenever the user asks which files contain a word,
+        or asks to locate files, even if they don't know the exact filename or extension.
+        Args:
+            keyword: A partial filename or keyword to search for.
+        """
+        print(f"[TOOL EXECUTED] search_files: {keyword}")
+        results = search_files_by_name(keyword)
+        if not results:
+            return f"No files found matching '{keyword}' in the indexed directories."
+        lines = []
+        for r in results:
+            size_kb = round(r['size_bytes'] / 1024, 1)
+            cat = f" [{r['category']}]" if r.get('category') else ""
+            lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
+        return f"Found {len(results)} file(s) matching '{keyword}':\n" + "\n".join(lines)
+
+    tools = [rename_file, delete_file, write_file, search_files]
+    tool_map = {
+        "rename_file": rename_file,
+        "delete_file": delete_file,
+        "write_file": write_file,
+        "search_files": search_files,
+    }
+
+    config = types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        temperature=0.7,
+        max_output_tokens=2048,
+        tools=tools,
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+    )
+
+    # --- Build conversation history ---
+    global _chat_history
+    user_content = types.Content(
+        role="user",
+        parts=[types.Part.from_text(text=cleaned_message)]
+    )
+    _chat_history.append(user_content)
+    _save_content(user_content)
+    contents = _chat_history.copy()
+
+    try:
+        global active_engine
+        # --- Stream from Gemini ---
+        accumulated_text = ""
+        accumulated_function_calls = []
+
+        stream = _client.models.generate_content_stream(
+            model=GEMINI_MODEL,
+            contents=contents,
+            config=config,
+        )
+        active_engine = "gemini"
+
+        last_response = None
+        for chunk in stream:
+            last_response = chunk
+            # Yield text deltas
+            if chunk.text:
+                accumulated_text += chunk.text
+                yield {"type": "token", "content": chunk.text}
+            # Accumulate function calls (typically in the last chunk)
+            if chunk.function_calls:
+                accumulated_function_calls.extend(chunk.function_calls)
+
+        # --- Handle function calls after stream completes ---
+        if accumulated_function_calls:
+            call = accumulated_function_calls[0]
+
+            if call.name in ["rename_file", "delete_file", "write_file"]:
+                # Mutating tool — pause for confirmation
+                global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map
+
+                # Build the model content from accumulated stream
+                model_parts = []
+                if accumulated_text:
+                    model_parts.append(types.Part.from_text(text=accumulated_text))
+                for fc in accumulated_function_calls:
+                    model_parts.append(types.Part.from_function_call(
+                        name=fc.name, args=fc.args
+                    ))
+                model_content = types.Content(role="model", parts=model_parts)
+
+                _pending_session = contents.copy()
+                _pending_session.append(model_content)
+                _pending_tool_calls = accumulated_function_calls
+                _pending_config = config
+                _pending_tool_map = tool_map
+
+                # Generate diff string
+                diff_str = ""
+                if call.name == "delete_file":
+                    diff_str = f"- {call.args['path']}"
+                elif call.name == "rename_file":
+                    diff_str = f"- {call.args['source']}\n+ {call.args['destination']}"
+                elif call.name == "write_file":
+                    import os as _os
+                    mode = call.args.get("mode", "overwrite")
+                    content = call.args.get("content", "")
+                    if mode == "append":
+                        diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
+                    else:
+                        path = call.args['path']
+                        if _os.path.exists(path):
+                            with open(path, 'r', encoding='utf-8') as f:
+                                old_lines = f.readlines()
+                            new_lines = [line + '\n' if not line.endswith('\n') else line for line in content.splitlines()]
+                            diff = difflib.unified_diff(old_lines, new_lines, fromfile=path, tofile=path, lineterm='')
+                            diff_str = "\n".join(diff)
+                        else:
+                            diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
+
+                # Save the model content to history
+                _chat_history = contents.copy()
+                _chat_history.append(model_content)
+                _save_content(model_content)
+
+                yield {"type": "tool_proposal", "proposal": {
+                    "name": call.name,
+                    "args": call.args,
+                    "diff": diff_str
+                }}
+                return  # Stop the generator — tool needs confirmation
+
+            # Non-mutating tools — execute immediately
+            model_parts = []
+            if accumulated_text:
+                model_parts.append(types.Part.from_text(text=accumulated_text))
+            for fc in accumulated_function_calls:
+                model_parts.append(types.Part.from_function_call(
+                    name=fc.name, args=fc.args
+                ))
+            model_content = types.Content(role="model", parts=model_parts)
+            contents.append(model_content)
+
+            function_responses = []
+            for fc in accumulated_function_calls:
+                if fc.name in tool_map:
+                    try:
+                        result = tool_map[fc.name](**fc.args)
+                    except TypeError as e:
+                        result = f"Argument Error: {e}"
+                    except Exception as e:
+                        result = f"Python Execution Error: {e}"
+                else:
+                    result = f"Error: Tool {fc.name} not recognized."
+                function_responses.append(
+                    types.Part.from_function_response(
+                        name=fc.name,
+                        response={"result": result}
+                    )
+                )
+
+            contents.append(types.Content(role="user", parts=function_responses))
+
+            # Follow-up call (non-streaming — tool results are short)
+            followup = _client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=contents,
+                config=config,
+            )
+
+            followup_text = followup.text or ""
+            if followup_text:
+                yield {"type": "token", "content": followup_text}
+                accumulated_text += followup_text
+
+            # Update telemetry from follow-up
+            if followup.usage_metadata:
+                global last_token_counts
+                last_token_counts = {
+                    "prompt": followup.usage_metadata.prompt_token_count,
+                    "candidates": followup.usage_metadata.candidates_token_count,
+                    "total": followup.usage_metadata.total_token_count
+                }
+
+            _chat_history = contents.copy()
+            full_model = types.Content(
+                role="model",
+                parts=[types.Part.from_text(text=followup_text)]
+            )
+            _chat_history.append(full_model)
+            _save_content(full_model)
+
+            yield {"type": "done", "tokens": last_token_counts}
+            return
+
+        # --- No function calls — pure text response ---
+        # Update telemetry from last chunk
+        if last_response and last_response.usage_metadata:
+            last_token_counts = {
+                "prompt": last_response.usage_metadata.prompt_token_count,
+                "candidates": last_response.usage_metadata.candidates_token_count,
+                "total": last_response.usage_metadata.total_token_count
+            }
+
+        model_content = types.Content(
+            role="model",
+            parts=[types.Part.from_text(text=accumulated_text)]
+        )
+        _chat_history = contents.copy()
+        _chat_history.append(model_content)
+        _save_content(model_content)
+
+        yield {"type": "done", "tokens": last_token_counts}
+
+    except (errors.APIError, httpx.TimeoutException, Exception) as e:
+        active_engine = "ollama"
+        error_name = type(e).__name__
+        print(f"[Lithe] Gemini streaming failed ({error_name}): {e}")
+        print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
+        ollama_response = _ollama_chat(system_prompt, cleaned_message)
+        model_content = types.Content(
+            role="model",
+            parts=[types.Part.from_text(text=ollama_response)]
+        )
+        _chat_history.append(model_content)
+        _save_content(model_content)
+        # Yield entire Ollama response as a single token chunk
+        yield {"type": "token", "content": ollama_response}
+        yield {"type": "done", "tokens": last_token_counts}
+
+
 def handle_tool_response(accept: bool) -> dict | str:
     """Resumes the pending session after user accepts or rejects a tool."""
     global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map, _chat_history

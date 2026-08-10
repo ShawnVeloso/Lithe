@@ -25,6 +25,65 @@ contextBridge.exposeInMainWorld('litheAPI', {
   },
 
   /**
+   * Stream chat tokens from the Python backend via SSE.
+   * Calls onToken for each text delta; resolves with the final result.
+   */
+  chatStream: async (
+    message: string,
+    onToken: (token: string) => void
+  ): Promise<{ response: string; tool_proposal?: any; tokens?: any }> => {
+    const url = `${PYTHON_SERVER_URL}/api/chat/stream?message=${encodeURIComponent(message)}`
+    const response = await fetch(url)
+
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    let accumulated = ''
+    let toolProposal: any = undefined
+    let tokens: any = undefined
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      // Parse SSE lines — each event is "data: {...}\n\n"
+      const lines = buffer.split('\n')
+      buffer = ''
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+
+        if (line.startsWith('data: ')) {
+          try {
+            const event = JSON.parse(line.slice(6))
+
+            if (event.type === 'token') {
+              accumulated += event.content
+              onToken(event.content)
+            } else if (event.type === 'tool_proposal') {
+              toolProposal = event.proposal
+            } else if (event.type === 'done') {
+              tokens = event.tokens
+            }
+          } catch {
+            // Incomplete JSON — put back in buffer for next chunk
+            buffer = lines.slice(i).join('\n')
+            break
+          }
+        }
+      }
+    }
+
+    return { response: accumulated, tool_proposal: toolProposal, tokens }
+  },
+
+  /**
    * Respond to a pending tool proposal.
    */
   toolResponse: async (accept: boolean): Promise<{response: string; tool_proposal?: any}> => {

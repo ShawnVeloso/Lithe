@@ -3,7 +3,7 @@
 start here
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-09T22:33 (PHT)
+> **Last Updated:** 2026-08-10T11:43 (PHT)
 
 ---
 
@@ -211,3 +211,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-09 | Antigravity | **Feature 4 (Tier 2):** Implemented Persistent Chat History. Added `messages` table to `memory.py` and synchronized `_chat_history` in `brain.py` with the database. Exposed history via `/api/chat/history` endpoint in `server.py` and loaded it on application mount in `App.tsx`. |
 | 2026-08-09 | Antigravity | **Feature 5 (Tier 2):** Implemented Onboarding Wizard. Modified `config.py` to set `NEEDS_ONBOARDING` instead of `sys.exit()` on missing key. Added `/api/onboarding` to `server.py` to save `.env`. Created `OnboardingWizard.tsx` and wired it into `App.tsx` on first run if health check indicates missing configuration. |
 | 2026-08-09 | Antigravity | **Feature 6 (Tier 2):** Implemented Pytest Suite. Added `pytest` to `requirements.txt`. Created `tests/test_memory.py` and `tests/test_tools.py` with 100% pass rate. Used `tmp_path` and monkeypatched `DB_PATH` to ensure tests run in isolation without polluting production state. |
+| 2026-08-10 | Antigravity | **Feature 1 (Tier 3): Streaming Responses (SSE).** Added `chat_stream()` generator to `brain.py` using `generate_content_stream` for token-by-token Gemini output. Added `GET /api/chat/stream` SSE endpoint to `server.py`. Implemented `chatStream()` in preload with `ReadableStream` SSE parsing. Rewired `App.tsx` to create a streaming placeholder message and progressively render tokens via `onToken` callback. Added `.streaming-cursor` CSS animation to `MessageBubble.tsx`. Mutating tool proposals (`write_file`, `delete_file`, `rename_file`) still pause the stream and render `ToolProposalCard` for confirmation. Ollama fallback yields full response as single chunk. |
