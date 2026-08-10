@@ -15,6 +15,7 @@ interface StatusResponse {
   token_budget_warning: number | null
   active_engine: string
   session_safeword_active: boolean
+  ollama_model: string
 }
 
 interface LitheAPI {

@@ -67,7 +67,7 @@ TOKEN_BUDGET_WARNING: int = int(os.getenv("TOKEN_BUDGET_WARNING", "1500000"))
 # Lithe falls back to a local Ollama model. These values are configurable
 # via .env so users can point to different models or remote Ollama instances.
 OLLAMA_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3")
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.1")
 OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "60"))
 
 # ---------------------------------------------------------------------------

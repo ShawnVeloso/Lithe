@@ -333,6 +333,7 @@ async def status_endpoint():
         "token_budget_warning": TOKEN_BUDGET_WARNING,
         "active_engine": brain.active_engine,
         "session_safeword_active": brain.session_safeword_active,
+        "ollama_model": OLLAMA_MODEL,
     }
 
 
