@@ -37,6 +37,10 @@ _pending_tool_calls = None
 _pending_config = None
 _pending_tool_map = None
 
+_pending_ollama_messages = None
+_pending_ollama_tool_calls = None
+_pending_ollama_tool_map = None
+
 # Global state for conversation history
 _chat_history: list[types.Content] = []
 _current_conversation_id: str | None = None
@@ -121,20 +125,85 @@ def _check_ollama_available() -> bool:
     except (httpx.ConnectError, httpx.TimeoutException, Exception):
         return False
 
+OLLAMA_TOOLS_SCHEMA = [
+    {
+        "type": "function",
+        "function": {
+            "name": "rename_file",
+            "description": "Renames a file or directory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "The absolute path of the file to rename."},
+                    "destination": {"type": "string", "description": "The new absolute path."}
+                },
+                "required": ["source", "destination"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_file",
+            "description": "Deletes a file or directory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "The absolute path of the file to delete."}
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Writes content to a file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "The absolute path of the file to write to."},
+                    "content": {"type": "string", "description": "The text content to write."},
+                    "mode": {"type": "string", "description": "'append' to add to the end of the file, or 'overwrite' to replace it entirely."}
+                },
+                "required": ["path", "content", "mode"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_files",
+            "description": "Searches the local file index for files matching a keyword. You MUST call this tool whenever the user asks which files contain a word, or asks to locate files, even if they don't know the exact filename or extension.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keyword": {"type": "string", "description": "A partial filename or keyword to search for."}
+                },
+                "required": ["keyword"]
+            }
+        }
+    }
+]
 
-def _ollama_chat(system_prompt: str, user_message: str) -> str:
+
+def _ollama_chat(system_prompt: str, user_message: str, tool_map: dict | None = None) -> str | dict:
     """Send a prompt to the local Ollama instance and return its response.
 
     Uses the /api/chat endpoint with proper message roles so Ollama
     receives the system prompt as a first-class instruction, not
     concatenated into the user message.
+    Handles function calling synchronously via Ollama's native tool support.
 
     Args:
         system_prompt: The system instruction (candid or compliant).
         user_message:  The cleaned user message (with file context injected).
+        tool_map:      Dictionary of python functions for tools.
 
     Returns:
-        The model's text response, or a descriptive error string.
+        The model's text response, or a dict containing a tool_proposal,
+        or a descriptive error string.
     """
     if not _check_ollama_available():
         return (
@@ -144,13 +213,16 @@ def _ollama_chat(system_prompt: str, user_message: str) -> str:
             f"the '{OLLAMA_MODEL}' model is pulled (`ollama pull {OLLAMA_MODEL}`)."
         )
 
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ]
+
     payload = {
         "model": OLLAMA_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
+        "messages": messages,
         "stream": False,
+        "tools": OLLAMA_TOOLS_SCHEMA if tool_map else []
     }
 
     try:
@@ -161,10 +233,92 @@ def _ollama_chat(system_prompt: str, user_message: str) -> str:
         )
         resp.raise_for_status()
         data = resp.json()
-        content = data.get("message", {}).get("content", "")
+        message = data.get("message", {})
+        
+        # --- Handle Function Calls ---
+        if "tool_calls" in message and tool_map:
+            # We only support one function call at a time for simplicity in the UI
+            call = message["tool_calls"][0]
+            name = call["function"]["name"]
+            args = call["function"]["arguments"]
+            
+            # --- Check if it's a mutating tool that needs confirmation ---
+            if name in ["rename_file", "delete_file", "write_file"]:
+                global _pending_ollama_messages, _pending_ollama_tool_calls, _pending_ollama_tool_map
+                _pending_ollama_messages = messages.copy()
+                _pending_ollama_messages.append(message)
+                _pending_ollama_tool_calls = message["tool_calls"]
+                _pending_ollama_tool_map = tool_map
+                
+                # Generate diff string
+                diff_str = ""
+                if name == "delete_file":
+                    diff_str = f"- {args.get('path', '')}"
+                elif name == "rename_file":
+                    diff_str = f"- {args.get('source', '')}\n+ {args.get('destination', '')}"
+                elif name == "write_file":
+                    import os
+                    mode = args.get("mode", "overwrite")
+                    content = args.get("content", "")
+                    if mode == "append":
+                        diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
+                    else:
+                        path = args.get("path", "")
+                        if os.path.exists(path):
+                            with open(path, 'r', encoding='utf-8') as f:
+                                old_lines = f.readlines()
+                            new_lines = [line + '\n' if not line.endswith('\n') else line for line in content.splitlines()]
+                            diff = difflib.unified_diff(old_lines, new_lines, fromfile=path, tofile=path, lineterm='')
+                            diff_str = "\n".join(diff)
+                        else:
+                            diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
+
+                return {
+                    "tool_proposal": {
+                        "name": name,
+                        "args": args,
+                        "diff": diff_str
+                    }
+                }
+                
+            # Non-mutating tools execute immediately
+            messages.append(message)
+            if name in tool_map:
+                try:
+                    result = tool_map[name](**args)
+                except TypeError as e:
+                    result = f"Argument Error: {e}"
+                except Exception as e:
+                    result = f"Python Execution Error: {e}"
+            else:
+                result = f"Error: Tool {name} not recognized."
+                
+            messages.append({
+                "role": "tool",
+                "content": str(result)
+            })
+            
+            # Call Ollama a second time for final answer
+            followup_payload = {
+                "model": OLLAMA_MODEL,
+                "messages": messages,
+                "stream": False
+            }
+            resp_followup = httpx.post(
+                f"{OLLAMA_URL}/api/chat",
+                json=followup_payload,
+                timeout=OLLAMA_TIMEOUT,
+            )
+            resp_followup.raise_for_status()
+            content = resp_followup.json().get("message", {}).get("content", "")
+            return content or "Error: Ollama returned an empty followup response."
+
+        # No function calls
+        content = message.get("content", "")
         if not content:
             return "Error: Ollama returned an empty response."
         return content
+
     except httpx.TimeoutException:
         return (
             f"Error: Ollama request timed out after {OLLAMA_TIMEOUT}s. "
@@ -189,8 +343,6 @@ def _check_hallucination(user_message: str, response_text: str, engine: str = "g
     claimed_success = any(kw in resp_lower for kw in ["i have created", "i've created", "is created", "has been created", "renamed", "deleted", "successfully", "done"])
     
     if mutating_intent and claimed_success:
-        if engine == "ollama":
-            return "ERROR: File modification tools are currently unavailable on the offline fallback model. Please wait until Gemini reconnects."
         return "ERROR: The LLM generated a narrative claiming to have modified files, but failed to actually invoke the system tool. Please rephrase your request to explicitly command tool execution."
 
     # 2. Search Intent
@@ -198,8 +350,6 @@ def _check_hallucination(user_message: str, response_text: str, engine: str = "g
     search_claimed = any(kw in resp_lower for kw in ["found", "here are the", "located", "matching files", "c:\\", "d:\\", "c:/", "d:/", "searched", "not present", "not found"])
     
     if search_intent and search_claimed:
-        if engine == "ollama":
-            return "ERROR: File search isn't available on the offline fallback model yet — try again once back on Gemini."
         return "ERROR: The LLM generated a narrative claiming to have searched for files, but failed to actually invoke the system search tool. Please rephrase your request to explicitly command tool execution."
 
     return None
@@ -423,8 +573,11 @@ def chat(user_message: str) -> str:
         error_name = type(e).__name__
         print(f"[Lithe] Gemini connection failed ({error_name}): {e}")
         print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
-        ollama_response = _ollama_chat(system_prompt, cleaned_message)
+        ollama_response = _ollama_chat(system_prompt, cleaned_message, tool_map)
         
+        if isinstance(ollama_response, dict) and "tool_proposal" in ollama_response:
+            return ollama_response
+
         err = _check_hallucination(cleaned_message, ollama_response, "ollama")
         if err:
             ollama_response = err
@@ -707,8 +860,12 @@ def chat_stream(user_message: str):
         error_name = type(e).__name__
         print(f"[Lithe] Gemini streaming failed ({error_name}): {e}")
         print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
-        ollama_response = _ollama_chat(system_prompt, cleaned_message)
+        ollama_response = _ollama_chat(system_prompt, cleaned_message, tool_map)
         
+        if isinstance(ollama_response, dict) and "tool_proposal" in ollama_response:
+            yield {"type": "tool_proposal", "proposal": ollama_response["tool_proposal"]}
+            return
+
         err = _check_hallucination(cleaned_message, ollama_response, "ollama")
         if err:
             ollama_response = err
@@ -726,6 +883,62 @@ def chat_stream(user_message: str):
 
 def handle_tool_response(accept: bool) -> dict | str:
     """Resumes the pending session after user accepts or rejects a tool."""
+    global active_engine
+
+    if active_engine == "ollama":
+        global _pending_ollama_messages, _pending_ollama_tool_calls, _pending_ollama_tool_map
+        if not _pending_ollama_messages or not _pending_ollama_tool_calls:
+            return "Error: No pending Ollama tool call found."
+
+        call = _pending_ollama_tool_calls[0]
+        name = call["function"]["name"]
+        args = call["function"]["arguments"]
+
+        if accept:
+            if name in _pending_ollama_tool_map:
+                try:
+                    result = _pending_ollama_tool_map[name](**args)
+                except TypeError as e:
+                    result = f"Argument Error: {e}"
+                except Exception as e:
+                    result = f"Python Execution Error: {e}"
+            else:
+                result = f"Error: Tool {name} not recognized."
+        else:
+            result = "ERROR: The user REJECTED this operation. Acknowledge this and ask what else you can do."
+
+        _pending_ollama_messages.append({
+            "role": "tool",
+            "content": str(result)
+        })
+
+        try:
+            resp = httpx.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "messages": _pending_ollama_messages,
+                    "stream": False
+                },
+                timeout=OLLAMA_TIMEOUT,
+            )
+            resp.raise_for_status()
+            content = resp.json().get("message", {}).get("content", "")
+            
+            # Clear state
+            _pending_ollama_messages = None
+            _pending_ollama_tool_calls = None
+            _pending_ollama_tool_map = None
+            
+            return content or "Error: Ollama returned an empty followup response."
+        except Exception as e:
+            _pending_ollama_messages = None
+            _pending_ollama_tool_calls = None
+            _pending_ollama_tool_map = None
+            return f"Error continuing Ollama conversation: {str(e)}"
+
+
+    # --- Gemini Path ---
     global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map, _chat_history
     if not _pending_session or not _pending_tool_calls:
         return "Error: No pending tool call found."
@@ -761,7 +974,6 @@ def handle_tool_response(accept: bool) -> dict | str:
     _save_content(user_tool_content)
 
     try:
-        global active_engine
         response = _client.models.generate_content(
             model=GEMINI_MODEL,
             contents=_pending_session,

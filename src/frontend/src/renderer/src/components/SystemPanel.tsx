@@ -178,12 +178,12 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
         <span className="system-separator" />
 
         {/* Ollama Limitation Badge */}
-        {status?.active_engine === 'ollama' && (
+        {status?.active_engine === 'ollama' && status?.ollama_model && !status.ollama_model.includes('llama3.1') && !status.ollama_model.includes('mistral') && (
           <>
             <div className="system-stat">
               <span 
                 className="system-stat__value system-stat__value--accent"
-                title="File searching and modification are disabled on local fallback model"
+                title="File searching and modification are disabled on this local fallback model"
               >
                 Tool Execution Limited (Local Fallback)
               </span>
