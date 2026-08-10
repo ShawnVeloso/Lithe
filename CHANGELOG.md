@@ -2,11 +2,20 @@
 
 Auto-generated from `docs/agent-logs/INDEX.md`.
 
+## 2026-08-10
+- **Feature 1 (Tier 3): Streaming Responses (SSE).** Added `chat_stream()` generator to `brain.py` using `generate_content_stream` for token-by-token Gemini output. Added `GET /api/chat/stream` SSE endpoint to `server.py`. Implemented `chatStream()` in preload with `ReadableStream` SSE parsing. Rewired `App.tsx` to create a streaming placeholder message and progressively render tokens via `onToken` callback. Added `.streaming-cursor` CSS animation to `MessageBubble.tsx`. Mutating tool proposals (`write_file`, `delete_file`, `rename_file`) still pause the stream and render `ToolProposalCard` for confirmation. Ollama fallback yields full response as single chunk.
+
 ## 2026-08-09
 - **Feature 1:** Added `src/backend/changelog.py` script and a startup hook in `server.py` to auto-generate `CHANGELOG.md` at the project root based on this index file.
 - **Feature 2:** Added UI toggle in `SystemPanel.tsx` for a global session override safeword mode. Added `/api/config/safeword` endpoint in `server.py` and state in `brain.py` to track and enforce it without requiring the phrase per-message.
 - **Feature 3:** Added search input to `IndexPanel.tsx` calling `search_files_by_name()` from `memory.py` via a new `/api/search` endpoint in `server.py` to render file paths inline directly.
 - **Bugfix:** Fixed `NameError: name 'brain' is not defined` in `GET /api/status` — replaced individual-name import (`from src.backend.brain import ...`) with module import (`import src.backend.brain as brain`) to match the pattern used by `toggle_safeword`.
+- **Feature 1 (Tier 2):** Added token budget indicator. Configured `TOKEN_BUDGET_WARNING` in `config.py` (default 1.5M), exposed it via `/api/status`, and styled the `tokens` readout in `SystemPanel.tsx` to turn amber (`system-stat__value--accent`) when the budget is exceeded.
+- **Feature 2 (Tier 2):** Added `CommandPalette.tsx` overlay accessible via `Ctrl+K`. Wired actions to focus chat, toggle the system log drawer, and trigger the index whitelist dialog. Styled to match the HUD aesthetic.
+- **Feature 3 (Tier 2):** Implemented Undo Stack for mutating tools (`rename`, `delete`, `write`). Added `action_history` table to `memory.py` and intercepted OS operations in `tools.py` to cache file contents pre-mutation. Added an undo button to `SystemPanel.tsx` connecting to new `/api/undo` endpoints.
+- **Feature 4 (Tier 2):** Implemented Persistent Chat History. Added `messages` table to `memory.py` and synchronized `_chat_history` in `brain.py` with the database. Exposed history via `/api/chat/history` endpoint in `server.py` and loaded it on application mount in `App.tsx`.
+- **Feature 5 (Tier 2):** Implemented Onboarding Wizard. Modified `config.py` to set `NEEDS_ONBOARDING` instead of `sys.exit()` on missing key. Added `/api/onboarding` to `server.py` to save `.env`. Created `OnboardingWizard.tsx` and wired it into `App.tsx` on first run if health check indicates missing configuration.
+- **Feature 6 (Tier 2):** Implemented Pytest Suite. Added `pytest` to `requirements.txt`. Created `tests/test_memory.py` and `tests/test_tools.py` with 100% pass rate. Used `tmp_path` and monkeypatched `DB_PATH` to ensure tests run in isolation without polluting production state.
 
 ## 2026-08-08
 - Fixed Lithe hallucinating tool execution by adding `disable=True` to `AutomaticFunctionCallingConfig` in `brain.py`. Found that the new `google.genai` SDK was auto-executing Python tools under the hood, silently bypassing `ToolProposalCard` UI interception and creating files directly. Also added `[TOOL EXECUTED]` log lines to `tools.py` for auditability, and patched `COMPLIANT_SYSTEM_PROMPT` to properly route tool instructions during safeword mode.

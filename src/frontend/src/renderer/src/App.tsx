@@ -18,6 +18,7 @@ export interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  isStreaming?: boolean
   tool_proposal?: {
     name: string
     args: any
@@ -37,6 +38,7 @@ function App(): JSX.Element {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isOnline, setIsOnline] = useState(false)
+  const [needsOnboarding, setNeedsOnboarding] = useState(false)
   const [safewordActive, setSafewordActive] = useState(false)
   const [status, setStatus] = useState<{
     watcher_active: boolean
@@ -89,8 +91,11 @@ function App(): JSX.Element {
     const checkHealth = async (): Promise<void> => {
       try {
         const healthy = await window.litheAPI.healthCheck()
-        setIsOnline(healthy)
-        if (healthy && messages.length === 0) {
+        setIsOnline(healthy.status)
+        if (healthy.needs_onboarding) {
+          setNeedsOnboarding(true)
+        }
+        if (healthy.status && messages.length === 0) {
             const history = await window.litheAPI.getChatHistory()
             if (history.history && history.history.length > 0) {
                 setMessages(history.history)
@@ -141,16 +146,79 @@ function App(): JSX.Element {
     setMessages((prev) => [...prev, userMessage])
     setIsLoading(true)
 
-    try {
-      const { response, tool_proposal } = await window.litheAPI.chat(content)
+    // Create a streaming placeholder for the assistant response
+    const streamingId = `assistant-streaming-${Date.now()}`
+    const streamingMessage: Message = {
+      id: streamingId,
+      role: 'assistant',
+      content: '',
+      isStreaming: true
+    }
+    setMessages((prev) => [...prev, streamingMessage])
 
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: response,
-        tool_proposal
+    try {
+      // SSE streaming — fetch directly from renderer (no preload needed)
+      const sseUrl = `http://127.0.0.1:8321/api/chat/stream?message=${encodeURIComponent(content)}`
+      const sseResponse = await fetch(sseUrl)
+
+      if (!sseResponse.ok) {
+        throw new Error(`Server error: ${sseResponse.status} ${sseResponse.statusText}`)
       }
-      setMessages((prev) => [...prev, assistantMessage])
+
+      const reader = sseResponse.body!.getReader()
+      const decoder = new TextDecoder()
+      let accumulated = ''
+      let toolProposal: any = undefined
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // Parse SSE lines — each event is "data: {...}\n\n"
+        const lines = buffer.split('\n')
+        buffer = ''
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i]
+
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6))
+
+              if (event.type === 'token') {
+                accumulated += event.content
+                const tokenContent = event.content
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === streamingId
+                      ? { ...msg, content: msg.content + tokenContent }
+                      : msg
+                  )
+                )
+              } else if (event.type === 'tool_proposal') {
+                toolProposal = event.proposal
+              }
+              // 'done' event — no action needed, stream ends naturally
+            } catch {
+              // Incomplete JSON — put back in buffer for next read
+              buffer = lines.slice(i).join('\n')
+              break
+            }
+          }
+        }
+      }
+
+      // Finalize the streaming message
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === streamingId
+            ? { ...msg, content: accumulated, isStreaming: false, tool_proposal: toolProposal }
+            : msg
+        )
+      )
 
       // Clear safeword state after the response if it was active
       if (hasSafeword) {
@@ -160,6 +228,8 @@ function App(): JSX.Element {
       const errorMsg = err instanceof Error ? err.message : 'Failed to get a response.'
       setError(errorMsg)
       setSafewordActive(false)
+      // Remove the empty streaming message on error
+      setMessages((prev) => prev.filter((msg) => msg.id !== streamingId))
     } finally {
       setIsLoading(false)
     }
