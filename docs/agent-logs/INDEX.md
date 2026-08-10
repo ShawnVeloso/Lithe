@@ -3,7 +3,7 @@
 start here
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-10T11:43 (PHT)
+> **Last Updated:** 2026-08-10T12:12 (PHT)
 
 ---
 
@@ -212,3 +212,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-09 | Antigravity | **Feature 5 (Tier 2):** Implemented Onboarding Wizard. Modified `config.py` to set `NEEDS_ONBOARDING` instead of `sys.exit()` on missing key. Added `/api/onboarding` to `server.py` to save `.env`. Created `OnboardingWizard.tsx` and wired it into `App.tsx` on first run if health check indicates missing configuration. |
 | 2026-08-09 | Antigravity | **Feature 6 (Tier 2):** Implemented Pytest Suite. Added `pytest` to `requirements.txt`. Created `tests/test_memory.py` and `tests/test_tools.py` with 100% pass rate. Used `tmp_path` and monkeypatched `DB_PATH` to ensure tests run in isolation without polluting production state. |
 | 2026-08-10 | Antigravity | **Feature 1 (Tier 3): Streaming Responses (SSE).** Added `chat_stream()` generator to `brain.py` using `generate_content_stream` for token-by-token Gemini output. Added `GET /api/chat/stream` SSE endpoint to `server.py`. Implemented `chatStream()` in preload with `ReadableStream` SSE parsing. Rewired `App.tsx` to create a streaming placeholder message and progressively render tokens via `onToken` callback. Added `.streaming-cursor` CSS animation to `MessageBubble.tsx`. Mutating tool proposals (`write_file`, `delete_file`, `rename_file`) still pause the stream and render `ToolProposalCard` for confirmation. Ollama fallback yields full response as single chunk. |
+| 2026-08-10 | Antigravity | **Bugfix:** Added New Conversation support. Modified `memory.py` to add `conversation_id` to the `messages` table schema and migrated existing records. Added `_current_conversation_id` global state to `brain.py` and a `new_conversation()` function to generate UUIDs. Created `POST /api/chat/new` in `server.py` and exposed it via `preload/index.ts`. Added a "New Chat" button to the `[02] CHAT` panel header in `ChatWindow.tsx` that clears UI state and resets backend conversation ID. |
