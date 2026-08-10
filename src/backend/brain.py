@@ -176,6 +176,32 @@ def _ollama_chat(system_prompt: str, user_message: str) -> str:
 # Global state for safeword
 session_safeword_active = False
 
+def _check_hallucination(user_message: str, response_text: str) -> str | None:
+    """Checks if the LLM hallucinated a tool execution when it shouldn't have."""
+    if not response_text:
+        return None
+        
+    user_msg = user_message.lower()
+    resp_lower = response_text.lower()
+    
+    # 1. Mutating Intent
+    mutating_intent = any(kw in user_msg for kw in ["create", "write", "rename", "delete", "make a file"]) and any(kw in user_msg for kw in ["file", ".txt", "folder"])
+    claimed_success = any(kw in resp_lower for kw in ["i have created", "i've created", "is created", "has been created", "renamed", "deleted", "successfully", "done"])
+    
+    if mutating_intent and claimed_success:
+        return "ERROR: The LLM generated a narrative claiming to have modified files, but failed to actually invoke the system tool. Please rephrase your request to explicitly command tool execution."
+
+    # 2. Search Intent
+    search_intent = any(kw in user_msg for kw in ["search", "find", "locate", "where is", "look for"]) and any(kw in user_msg for kw in ["file", "folder", "directory"])
+    search_claimed = any(kw in resp_lower for kw in ["found", "here are the", "located", "matching files", "c:\\", "d:\\", "c:/", "d:/", "searched", "not present", "not found"])
+    
+    if search_intent and search_claimed:
+        return "ERROR: The LLM generated a narrative claiming to have searched for files, but failed to actually invoke the system search tool. Please rephrase your request to explicitly command tool execution."
+
+    return None
+
+
+
 
 def chat(user_message: str) -> str:
     """Send a message to the Gemini LLM and return its response.
@@ -367,14 +393,10 @@ def chat(user_message: str) -> str:
                 config=config,
             )
         else:
-            # Check for hallucinated execution: if the user implied a file mutation but no tool was called.
-            user_msg = cleaned_message.lower()
-            mutating_intent = any(kw in user_msg for kw in ["create", "write", "rename", "delete", "make a file"]) and any(kw in user_msg for kw in ["file", ".txt", "folder"])
-            resp_lower = response.text.lower()
-            claimed_success = any(kw in resp_lower for kw in ["i have created", "i've created", "is created", "has been created", "renamed", "deleted", "successfully", "done"])
-            
-            if mutating_intent and claimed_success:
-                return "ERROR: The LLM generated a narrative claiming to have modified files, but failed to actually invoke the system tool. Please rephrase your request to explicitly command tool execution."
+            # Check for hallucinated execution
+            err = _check_hallucination(cleaned_message, response.text)
+            if err:
+                return err
 
         # Update telemetry
         if response.usage_metadata:
@@ -398,6 +420,11 @@ def chat(user_message: str) -> str:
         print(f"[Lithe] Gemini connection failed ({error_name}): {e}")
         print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
         ollama_response = _ollama_chat(system_prompt, cleaned_message)
+        
+        err = _check_hallucination(cleaned_message, ollama_response)
+        if err:
+            ollama_response = err
+
         model_content = types.Content(
             role="model",
             parts=[types.Part.from_text(text=ollama_response)]
@@ -649,6 +676,10 @@ def chat_stream(user_message: str):
             return
 
         # --- No function calls — pure text response ---
+        err = _check_hallucination(cleaned_message, accumulated_text)
+        if err:
+            yield {"type": "token", "content": "\n\n" + err}
+
         # Update telemetry from last chunk
         if last_response and last_response.usage_metadata:
             last_token_counts = {
@@ -673,6 +704,11 @@ def chat_stream(user_message: str):
         print(f"[Lithe] Gemini streaming failed ({error_name}): {e}")
         print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
         ollama_response = _ollama_chat(system_prompt, cleaned_message)
+        
+        err = _check_hallucination(cleaned_message, ollama_response)
+        if err:
+            ollama_response = err
+
         model_content = types.Content(
             role="model",
             parts=[types.Part.from_text(text=ollama_response)]
