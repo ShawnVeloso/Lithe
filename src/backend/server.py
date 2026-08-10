@@ -318,7 +318,7 @@ async def undo_endpoint(request: UndoRequest):
 async def status_endpoint():
     """Returns background indexer status for the frontend HUD."""
     from src.backend.watcher import last_event_time, _observer
-    from src.backend.config import INDEX_WHITELIST, EXCLUDED_EXTENSIONS, TOKEN_BUDGET_WARNING
+    from src.backend.config import INDEX_WHITELIST, EXCLUDED_EXTENSIONS, TOKEN_BUDGET_WARNING, OLLAMA_MODEL
     from src.backend.memory import get_file_count_by_directory
     import src.backend.brain as brain
 
@@ -333,6 +333,7 @@ async def status_endpoint():
         "token_budget_warning": TOKEN_BUDGET_WARNING,
         "active_engine": brain.active_engine,
         "session_safeword_active": brain.session_safeword_active,
+        "ollama_model": OLLAMA_MODEL,
     }
 
 
