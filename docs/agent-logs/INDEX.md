@@ -1,9 +1,7 @@
 # Lithe — Agent Log Index
 
-start here
-
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-10T12:12 (PHT)
+> **Last Updated:** 2026-08-10T23:50 (PHT)
 
 ---
 
@@ -153,6 +151,7 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 3. **Streaming Responses** — Token-by-token output in the UI via Server-Sent Events instead of waiting for the full response.
 4. **Markdown Rendering** — Render code blocks, bold, lists, and other formatting in assistant chat bubbles.
 5. **Settings Panel** — In-app UI for managing API keys, whitelist directories, and toggling Ollama.
+6. **Native Ollama Tool Calling** — (Completed) Upgraded default `OLLAMA_MODEL` to a tool-calling-capable model (`llama3.1`) and refactored `_ollama_chat()` to support real function calling via the API's `tools` parameter, mirroring the Gemini implementation.
 
 ---
 
@@ -213,3 +212,6 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-09 | Antigravity | **Feature 6 (Tier 2):** Implemented Pytest Suite. Added `pytest` to `requirements.txt`. Created `tests/test_memory.py` and `tests/test_tools.py` with 100% pass rate. Used `tmp_path` and monkeypatched `DB_PATH` to ensure tests run in isolation without polluting production state. |
 | 2026-08-10 | Antigravity | **Feature 1 (Tier 3): Streaming Responses (SSE).** Added `chat_stream()` generator to `brain.py` using `generate_content_stream` for token-by-token Gemini output. Added `GET /api/chat/stream` SSE endpoint to `server.py`. Implemented `chatStream()` in preload with `ReadableStream` SSE parsing. Rewired `App.tsx` to create a streaming placeholder message and progressively render tokens via `onToken` callback. Added `.streaming-cursor` CSS animation to `MessageBubble.tsx`. Mutating tool proposals (`write_file`, `delete_file`, `rename_file`) still pause the stream and render `ToolProposalCard` for confirmation. Ollama fallback yields full response as single chunk. |
 | 2026-08-10 | Antigravity | **Bugfix:** Added New Conversation support. Modified `memory.py` to add `conversation_id` to the `messages` table schema and migrated existing records. Added `_current_conversation_id` global state to `brain.py` and a `new_conversation()` function to generate UUIDs. Created `POST /api/chat/new` in `server.py` and exposed it via `preload/index.ts`. Added a "New Chat" button to the `[02] CHAT` panel header in `ChatWindow.tsx` that clears UI state and resets backend conversation ID. |
+| 2026-08-10 | Antigravity | **Bugfix:** Added `_check_hallucination` to `brain.py` to prevent hallucinated tool execution. Applied the circuit breaker to both Gemini and Ollama fallback paths (both standard and streaming endpoints). Expanded detection to block fabricated `search_files` results in addition to mutating tools. |
+| 2026-08-10 | Antigravity | **Feature:** Added 'Tool Execution Limited' warning badge in `SystemPanel.tsx` and tailored hallucination error messages for the Ollama fallback. Logged future native tool-calling upgrade. |
+| 2026-08-10 | Antigravity | **Feature:** Implemented Native Tool Calling for Ollama Fallback. Refactored `_ollama_chat()` to use Ollama's `tools` parameter, parsing responses for `tool_calls` and triggering the same `ToolProposalCard` intercept logic as Gemini. Updated `handle_tool_response()` to resume Ollama sessions properly. Unblocked RAG file searching on offline fallbacks. Removed Ollama-specific circuit breakers in `_check_hallucination` as they are no longer necessary. Changed default `.env` and `config.py` model to `llama3.1`. |
