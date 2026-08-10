@@ -25,6 +25,22 @@ contextBridge.exposeInMainWorld('litheAPI', {
   },
 
   /**
+   * Start a new chat conversation.
+   */
+  newChat: async (): Promise<{conversation_id: string}> => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/chat/new`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    
+    return await response.json()
+  },
+
+  /**
    * Respond to a pending tool proposal.
    */
   toolResponse: async (accept: boolean): Promise<{response: string; tool_proposal?: any}> => {
