@@ -39,6 +39,7 @@ _pending_tool_map = None
 
 # Global state for conversation history
 _chat_history: list[types.Content] = []
+_current_conversation_id: str | None = None
 
 # Global state for telemetry
 last_token_counts = {"prompt": 0, "candidates": 0, "total": 0}
@@ -52,12 +53,20 @@ _client = genai.Client(api_key=GEMINI_API_KEY)
 # --- Feature 4 (Tier 2): Persistent Chat History ---
 import uuid
 import json
-from src.backend.memory import save_message, get_chat_history
+from src.backend.memory import save_message, get_chat_history, get_latest_conversation_id
 
 def _load_history():
     global _chat_history
+    global _current_conversation_id
+    
     _chat_history.clear()
-    for row in get_chat_history():
+    
+    _current_conversation_id = get_latest_conversation_id()
+    if not _current_conversation_id:
+        _current_conversation_id = str(uuid.uuid4())
+        return
+
+    for row in get_chat_history(_current_conversation_id):
         parts = []
         if row["content"]:
             parts.append(types.Part.from_text(text=row["content"]))
@@ -71,6 +80,14 @@ def _load_history():
         if parts:
             _chat_history.append(types.Content(role=row["role"], parts=parts))
 
+def new_conversation() -> str:
+    """Starts a new conversation by resetting the global state."""
+    global _chat_history
+    global _current_conversation_id
+    _chat_history.clear()
+    _current_conversation_id = str(uuid.uuid4())
+    return _current_conversation_id
+
 def _save_content(content_obj: types.Content):
     try:
         content_text = ""
@@ -83,7 +100,7 @@ def _save_content(content_obj: types.Content):
                 tool_proposal_json = json.dumps({"name": part.function_call.name, "args": part.function_call.args})
             elif part.function_response:
                 tool_resolution = json.dumps({"name": part.function_response.name, "response": part.function_response.response})
-        save_message(str(uuid.uuid4()), content_obj.role, content_text, tool_proposal_json, tool_resolution)
+        save_message(str(uuid.uuid4()), _current_conversation_id, content_obj.role, content_text, tool_proposal_json, tool_resolution)
     except Exception as e:
         print(f"Error saving chat history: {e}")
 

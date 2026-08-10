@@ -71,6 +71,7 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS messages (
                 id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 tool_proposal_json TEXT,
@@ -86,6 +87,13 @@ def init_db() -> None:
         ]
         if "category" not in existing_cols:
             cursor.execute("ALTER TABLE files ADD COLUMN category TEXT DEFAULT ''")
+
+        # --- Migration: add `conversation_id` column to existing databases ---
+        existing_msg_cols = [
+            col[1] for col in cursor.execute("PRAGMA table_info(messages)").fetchall()
+        ]
+        if "conversation_id" not in existing_msg_cols:
+            cursor.execute("ALTER TABLE messages ADD COLUMN conversation_id TEXT DEFAULT 'default'")
 
         # Create an index on extension for faster filtering of research files
         cursor.execute(
@@ -312,27 +320,35 @@ def delete_action(action_id: int) -> None:
 # Feature 4: Persistent Chat History
 # ---------------------------------------------------------------------------
 
-def save_message(msg_id: str, role: str, content: str, tool_proposal_json: str = None, tool_resolution: str = None) -> None:
+def get_latest_conversation_id() -> str | None:
+    """Returns the most recent conversation_id, or None if no messages exist."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT conversation_id FROM messages ORDER BY timestamp DESC LIMIT 1")
+        row = cursor.fetchone()
+        return row["conversation_id"] if row else None
+
+def save_message(msg_id: str, conversation_id: str, role: str, content: str, tool_proposal_json: str = None, tool_resolution: str = None) -> None:
     """Saves a message to the chat history."""
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO messages (id, role, content, tool_proposal_json, tool_resolution, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO messages (id, conversation_id, role, content, tool_proposal_json, tool_resolution, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 content=excluded.content,
                 tool_proposal_json=excluded.tool_proposal_json,
                 tool_resolution=excluded.tool_resolution
             """,
-            (msg_id, role, content, tool_proposal_json, tool_resolution, time.time())
+            (msg_id, conversation_id, role, content, tool_proposal_json, tool_resolution, time.time())
         )
         conn.commit()
 
-def get_chat_history() -> List[Dict[str, Any]]:
-    """Retrieves the full chat history ordered by timestamp."""
+def get_chat_history(conversation_id: str) -> List[Dict[str, Any]]:
+    """Retrieves the full chat history for a given conversation ordered by timestamp."""
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, role, content, tool_proposal_json, tool_resolution, timestamp FROM messages ORDER BY timestamp ASC")
+        cursor.execute("SELECT id, role, content, tool_proposal_json, tool_resolution, timestamp FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC", (conversation_id,))
         return [dict(row) for row in cursor.fetchall()]
 
 # Ensure DB is initialized when this module is imported
