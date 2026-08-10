@@ -176,7 +176,7 @@ def _ollama_chat(system_prompt: str, user_message: str) -> str:
 # Global state for safeword
 session_safeword_active = False
 
-def _check_hallucination(user_message: str, response_text: str) -> str | None:
+def _check_hallucination(user_message: str, response_text: str, engine: str = "gemini") -> str | None:
     """Checks if the LLM hallucinated a tool execution when it shouldn't have."""
     if not response_text:
         return None
@@ -189,6 +189,8 @@ def _check_hallucination(user_message: str, response_text: str) -> str | None:
     claimed_success = any(kw in resp_lower for kw in ["i have created", "i've created", "is created", "has been created", "renamed", "deleted", "successfully", "done"])
     
     if mutating_intent and claimed_success:
+        if engine == "ollama":
+            return "ERROR: File modification tools are currently unavailable on the offline fallback model. Please wait until Gemini reconnects."
         return "ERROR: The LLM generated a narrative claiming to have modified files, but failed to actually invoke the system tool. Please rephrase your request to explicitly command tool execution."
 
     # 2. Search Intent
@@ -196,6 +198,8 @@ def _check_hallucination(user_message: str, response_text: str) -> str | None:
     search_claimed = any(kw in resp_lower for kw in ["found", "here are the", "located", "matching files", "c:\\", "d:\\", "c:/", "d:/", "searched", "not present", "not found"])
     
     if search_intent and search_claimed:
+        if engine == "ollama":
+            return "ERROR: File search isn't available on the offline fallback model yet — try again once back on Gemini."
         return "ERROR: The LLM generated a narrative claiming to have searched for files, but failed to actually invoke the system search tool. Please rephrase your request to explicitly command tool execution."
 
     return None
@@ -394,7 +398,7 @@ def chat(user_message: str) -> str:
             )
         else:
             # Check for hallucinated execution
-            err = _check_hallucination(cleaned_message, response.text)
+            err = _check_hallucination(cleaned_message, response.text, "gemini")
             if err:
                 return err
 
@@ -421,7 +425,7 @@ def chat(user_message: str) -> str:
         print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
         ollama_response = _ollama_chat(system_prompt, cleaned_message)
         
-        err = _check_hallucination(cleaned_message, ollama_response)
+        err = _check_hallucination(cleaned_message, ollama_response, "ollama")
         if err:
             ollama_response = err
 
@@ -676,7 +680,7 @@ def chat_stream(user_message: str):
             return
 
         # --- No function calls — pure text response ---
-        err = _check_hallucination(cleaned_message, accumulated_text)
+        err = _check_hallucination(cleaned_message, accumulated_text, "gemini")
         if err:
             yield {"type": "token", "content": "\n\n" + err}
 
@@ -705,7 +709,7 @@ def chat_stream(user_message: str):
         print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
         ollama_response = _ollama_chat(system_prompt, cleaned_message)
         
-        err = _check_hallucination(cleaned_message, ollama_response)
+        err = _check_hallucination(cleaned_message, ollama_response, "ollama")
         if err:
             ollama_response = err
 
