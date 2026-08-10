@@ -19,11 +19,6 @@ interface StatusResponse {
 
 interface LitheAPI {
   chat: (message: string) => Promise<{response: string; tool_proposal?: any}>
-  chatStream: (message: string, onToken: (token: string) => void) => Promise<{
-    response: string
-    tool_proposal?: any
-    tokens?: { prompt: number; candidates: number; total: number }
-  }>
   toolResponse: (accept: boolean) => Promise<{response: string; tool_proposal?: any}>
   healthCheck: () => Promise<{status: boolean, needs_onboarding?: boolean}>
   getStatus: () => Promise<StatusResponse>

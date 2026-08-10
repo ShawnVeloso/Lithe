@@ -153,25 +153,65 @@ function App(): JSX.Element {
     setMessages((prev) => [...prev, streamingMessage])
 
     try {
-      const { response, tool_proposal } = await window.litheAPI.chatStream(
-        content,
-        (token: string) => {
-          // Progressive token update — append each chunk to the streaming message
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === streamingId
-                ? { ...msg, content: msg.content + token }
-                : msg
-            )
-          )
+      // SSE streaming — fetch directly from renderer (no preload needed)
+      const sseUrl = `http://127.0.0.1:8321/api/chat/stream?message=${encodeURIComponent(content)}`
+      const sseResponse = await fetch(sseUrl)
+
+      if (!sseResponse.ok) {
+        throw new Error(`Server error: ${sseResponse.status} ${sseResponse.statusText}`)
+      }
+
+      const reader = sseResponse.body!.getReader()
+      const decoder = new TextDecoder()
+      let accumulated = ''
+      let toolProposal: any = undefined
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // Parse SSE lines — each event is "data: {...}\n\n"
+        const lines = buffer.split('\n')
+        buffer = ''
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i]
+
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6))
+
+              if (event.type === 'token') {
+                accumulated += event.content
+                const tokenContent = event.content
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === streamingId
+                      ? { ...msg, content: msg.content + tokenContent }
+                      : msg
+                  )
+                )
+              } else if (event.type === 'tool_proposal') {
+                toolProposal = event.proposal
+              }
+              // 'done' event — no action needed, stream ends naturally
+            } catch {
+              // Incomplete JSON — put back in buffer for next read
+              buffer = lines.slice(i).join('\n')
+              break
+            }
+          }
         }
-      )
+      }
 
       // Finalize the streaming message
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === streamingId
-            ? { ...msg, content: response, isStreaming: false, tool_proposal }
+            ? { ...msg, content: accumulated, isStreaming: false, tool_proposal: toolProposal }
             : msg
         )
       )
