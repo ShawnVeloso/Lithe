@@ -651,6 +651,16 @@ body {
   animation: blink-cursor 1s step-end infinite;
 }
 
+.streaming-cursor {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  background: var(--accent);
+  animation: blink-cursor 0.8s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+}
+
 /* --- Chat Input (Command Line) --- */
 .chat-input-container {
   padding: 0 12px 12px;

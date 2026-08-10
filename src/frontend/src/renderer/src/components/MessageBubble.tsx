@@ -23,13 +23,16 @@ function MessageBubble({ message, onToolResponse }: MessageBubbleProps): JSX.Ele
       <div className="message-content">
         <span className={`message-prefix ${prefixClass}`}>{prefix}</span>
         {message.tool_proposal ? (
-          <ToolProposalCard 
-            proposal={message.tool_proposal} 
+          <ToolProposalCard
+            proposal={message.tool_proposal}
             resolution={message.tool_resolution}
             onRespond={onToolResponse || (async () => {})}
           />
         ) : (
-          <span className="message-text">{message.content}</span>
+          <span className="message-text">
+            {message.content}
+            {message.isStreaming && <span className="streaming-cursor" />}
+          </span>
         )}
       </div>
     </div>

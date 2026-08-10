@@ -117,6 +117,35 @@ async def chat_endpoint(request: ChatRequest):
         return ChatResponse(response="", tool_proposal=result.get("tool_proposal"))
     return ChatResponse(response=result)
 
+
+@app.get("/api/chat/stream")
+async def chat_stream_endpoint(message: str):
+    """SSE streaming endpoint: streams tokens from Lithe's brain as they're generated.
+
+    Sends Server-Sent Events with JSON payloads:
+        data: {"type": "token", "content": "..."}
+        data: {"type": "tool_proposal", "proposal": {...}}
+        data: {"type": "done", "tokens": {...}}
+    """
+    import json as _json
+    from starlette.responses import StreamingResponse
+    from src.backend.brain import chat_stream
+
+    def event_generator():
+        for event in chat_stream(message):
+            yield f"data: {_json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
 @app.post("/api/chat/tool_response", response_model=ChatResponse)
 async def tool_response_endpoint(request: ToolResponseRequest):
     """Endpoint for user to accept or reject a pending tool proposal."""
