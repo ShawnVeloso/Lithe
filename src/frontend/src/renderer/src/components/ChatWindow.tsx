@@ -64,7 +64,7 @@ function ChatWindow({ messages, isLoading, error, onSendMessage, onToolResponse,
               <MessageBubble key={msg.id} message={msg} onToolResponse={onToolResponse} />
             ))}
 
-            {isLoading && (
+            {isLoading && !messages.some((m) => m.isStreaming) && (
               <div className="typing-indicator">
                 <span className="message-prefix message-prefix--assistant">lithe&gt;</span>
                 <span className="typing-cursor" />
