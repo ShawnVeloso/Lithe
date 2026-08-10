@@ -38,6 +38,7 @@ function App(): JSX.Element {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isOnline, setIsOnline] = useState(false)
+  const [needsOnboarding, setNeedsOnboarding] = useState(false)
   const [safewordActive, setSafewordActive] = useState(false)
   const [status, setStatus] = useState<{
     watcher_active: boolean
@@ -90,8 +91,11 @@ function App(): JSX.Element {
     const checkHealth = async (): Promise<void> => {
       try {
         const healthy = await window.litheAPI.healthCheck()
-        setIsOnline(healthy)
-        if (healthy && messages.length === 0) {
+        setIsOnline(healthy.status)
+        if (healthy.needs_onboarding) {
+          setNeedsOnboarding(true)
+        }
+        if (healthy.status && messages.length === 0) {
             const history = await window.litheAPI.getChatHistory()
             if (history.history && history.history.length > 0) {
                 setMessages(history.history)
