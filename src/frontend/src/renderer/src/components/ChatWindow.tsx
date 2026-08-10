@@ -13,13 +13,14 @@ interface ChatWindowProps {
   error: string | null
   onSendMessage: (content: string) => void
   onToolResponse?: (accept: boolean) => Promise<void>
+  onNewChat?: () => void
   isOnline: boolean
 }
 
 // ---------------------------------------------------------------------------
 // ChatWindow — [02] CHAT panel content
 // ---------------------------------------------------------------------------
-function ChatWindow({ messages, isLoading, error, onSendMessage, onToolResponse, isOnline }: ChatWindowProps): JSX.Element {
+function ChatWindow({ messages, isLoading, error, onSendMessage, onToolResponse, onNewChat, isOnline }: ChatWindowProps): JSX.Element {
   const feedRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom on new messages or loading state change
@@ -33,11 +34,27 @@ function ChatWindow({ messages, isLoading, error, onSendMessage, onToolResponse,
 
   return (
     <div className="panel chat-panel" id="chat-panel">
-      <div className="panel__header">
+      <div className="panel__header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="panel__label">
           <span className="panel__label-number">[02]</span>
           CHAT
         </span>
+        {onNewChat && (
+          <button 
+            onClick={onNewChat}
+            style={{ 
+              background: 'transparent', 
+              border: '1px solid var(--border)', 
+              color: 'var(--text-dim)', 
+              padding: '2px 8px', 
+              fontSize: '10px', 
+              cursor: 'pointer',
+              textTransform: 'uppercase'
+            }}
+          >
+            New Chat
+          </button>
+        )}
       </div>
 
       <div className="message-feed" ref={feedRef}>

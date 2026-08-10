@@ -277,6 +277,20 @@ function App(): JSX.Element {
     }
   }
 
+  const handleNewChat = async (): Promise<void> => {
+    try {
+      setIsLoading(true)
+      await window.litheAPI.newChat()
+      setMessages([])
+      setError(null)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to start new chat.'
+      setError(errorMsg)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
 
   // Global Keyboard Shortcuts
@@ -335,6 +349,7 @@ function App(): JSX.Element {
           error={error}
           onSendMessage={handleSendMessage}
           onToolResponse={handleToolResponse}
+          onNewChat={handleNewChat}
           isOnline={isOnline}
         />
       </div>

@@ -159,9 +159,13 @@ async def tool_response_endpoint(request: ToolResponseRequest):
 async def chat_history_endpoint():
     """Returns the persistent chat history."""
     from src.backend.memory import get_chat_history
+    from src.backend.brain import _current_conversation_id
     import json
     
-    history = get_chat_history()
+    if not _current_conversation_id:
+        return {"history": []}
+        
+    history = get_chat_history(_current_conversation_id)
     formatted = []
     for row in history:
         msg = {
@@ -178,6 +182,14 @@ async def chat_history_endpoint():
         formatted.append(msg)
         
     return {"history": formatted}
+
+
+@app.post("/api/chat/new")
+async def new_chat_endpoint():
+    """Starts a new conversation and clears the current history context."""
+    from src.backend.brain import new_conversation
+    conversation_id = new_conversation()
+    return {"conversation_id": conversation_id}
 
 
 class SafewordToggleRequest(BaseModel):
