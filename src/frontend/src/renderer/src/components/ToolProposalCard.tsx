@@ -17,9 +17,10 @@ export default function ToolProposalCard({ proposal, resolution, onRespond }: To
     setIsResponding(true)
     try {
       await onRespond(accept)
-    } finally {
-      // We don't need to reset isResponding because the message will likely be re-rendered 
-      // or replaced, but just in case:
+      // On success, keep isResponding=true so buttons stay locked until the
+      // parent re-renders this card with a `resolution` prop (or unmounts it).
+    } catch {
+      // Only re-enable on failure so the user can retry.
       setIsResponding(false)
     }
   }
