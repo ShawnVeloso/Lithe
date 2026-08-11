@@ -22,6 +22,11 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
   const [filterText, setFilterText] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
   
+  const [showExportUI, setShowExportUI] = useState(false)
+  const [exportFormat, setExportFormat] = useState('json')
+  const [exportFrom, setExportFrom] = useState('')
+  const [exportTo, setExportTo] = useState('')
+
   const logFeedRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -47,6 +52,36 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
   const filteredLogs = logs.filter(log => 
     log.path.toLowerCase().includes(filterText.toLowerCase())
   )
+
+  const handleExport = async () => {
+    try {
+      let url = `http://127.0.0.1:8321/api/audit/export?format=${exportFormat}`
+      if (exportFrom) url += `&from=${exportFrom}T00:00:00Z`
+      if (exportTo) url += `&to=${exportTo}T23:59:59Z`
+      const res = await fetch(url)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.detail || `HTTP ${res.status}`)
+      }
+      const blob = await res.blob()
+      const downloadUrl = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = downloadUrl
+      const contentDisposition = res.headers.get('content-disposition')
+      let filename = `audit_log.${exportFormat}`
+      if (contentDisposition && contentDisposition.includes('filename=')) {
+        filename = contentDisposition.split('filename=')[1].replace(/"/g, '')
+      }
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(downloadUrl)
+      setShowExportUI(false)
+    } catch (e: any) {
+      alert(`Export failed: ${e.message}`)
+    }
+  }
 
   return (
     <div
@@ -220,6 +255,56 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
             [⟲ undo]
           </span>
         </div>
+
+        <span className="system-separator" />
+
+        {/* Audit Export Toggle */}
+        <div className="system-stat">
+          <span
+            className="system-stat__value system-stat__value--accent"
+            style={{ cursor: 'pointer', opacity: 0.8 }}
+            onClick={() => setShowExportUI(!showExportUI)}
+            title="Export Audit Log"
+          >
+            [↓ audit]
+          </span>
+        </div>
+        
+        {showExportUI && (
+          <>
+            <span className="system-separator" />
+            <div className="system-stat" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <select 
+                value={exportFormat} 
+                onChange={(e) => setExportFormat(e.target.value)}
+                style={{ background: 'transparent', color: 'var(--text)', border: '1px solid var(--border)', fontFamily: 'inherit', outline: 'none' }}
+              >
+                <option value="json" style={{ background: 'var(--bg-panel)' }}>JSON</option>
+                <option value="csv" style={{ background: 'var(--bg-panel)' }}>CSV</option>
+              </select>
+              <input 
+                type="date" 
+                value={exportFrom} 
+                onChange={(e) => setExportFrom(e.target.value)} 
+                title="From Date"
+                style={{ background: 'transparent', color: 'var(--text)', border: '1px solid var(--border)', fontFamily: 'inherit', outline: 'none', padding: '0 4px' }}
+              />
+              <input 
+                type="date" 
+                value={exportTo} 
+                onChange={(e) => setExportTo(e.target.value)} 
+                title="To Date"
+                style={{ background: 'transparent', color: 'var(--text)', border: '1px solid var(--border)', fontFamily: 'inherit', outline: 'none', padding: '0 4px' }}
+              />
+              <button 
+                onClick={handleExport}
+                style={{ background: 'var(--text-dim)', color: 'var(--bg-main)', border: 'none', padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.8rem', fontWeight: 600 }}
+              >
+                DOWNLOAD
+              </button>
+            </div>
+          </>
+        )}
 
       </div>
     </div>

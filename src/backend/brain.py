@@ -29,7 +29,7 @@ from src.backend.prompts.system_prompt import (
 )
 from src.backend.retrieval import get_file_contexts
 from src.backend.tools import execute_rename, execute_delete, execute_write
-from src.backend.memory import search_files_by_name
+from src.backend.memory import search_files_by_name, record_action
 
 # Global state for pausing execution during tool confirmation
 _pending_session: list[types.Content] | None = None
@@ -392,14 +392,14 @@ def chat(user_message: str) -> str:
             source: The absolute path of the file to rename.
             destination: The new absolute path.
         """
-        return execute_rename(source, destination, safeword_active=True)
+        return execute_rename(source, destination, safeword_active=True, conversation_id=_current_conversation_id)
 
     def delete_file(path: str) -> str:
         """Deletes a file or directory.
         Args:
             path: The absolute path of the file to delete.
         """
-        return execute_delete(path, safeword_active=True)
+        return execute_delete(path, safeword_active=True, conversation_id=_current_conversation_id)
 
     def write_file(path: str, content: str, mode: str) -> str:
         """Writes content to a file.
@@ -408,7 +408,7 @@ def chat(user_message: str) -> str:
             content: The text content to write.
             mode: 'append' to add to the end of the file, or 'overwrite' to replace it entirely.
         """
-        return execute_write(path, content, mode, safeword_active=True)
+        return execute_write(path, content, mode, safeword_active=True, conversation_id=_current_conversation_id)
 
     def search_files(keyword: str) -> str:
         """Searches the local file index for files matching a keyword.
@@ -419,8 +419,11 @@ def chat(user_message: str) -> str:
         """
         print(f"[TOOL EXECUTED] search_files: {keyword}")
         results = search_files_by_name(keyword)
+        import json
         if not results:
+            record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result="success (no results)", conversation_id=_current_conversation_id)
             return f"No files found matching '{keyword}' in the indexed directories."
+        record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result=f"success ({len(results)} found)", conversation_id=_current_conversation_id)
         lines = []
         for r in results:
             size_kb = round(r['size_bytes'] / 1024, 1)
@@ -624,14 +627,14 @@ def chat_stream(user_message: str):
             source: The absolute path of the file to rename.
             destination: The new absolute path.
         """
-        return execute_rename(source, destination, safeword_active=True)
+        return execute_rename(source, destination, safeword_active=True, conversation_id=_current_conversation_id)
 
     def delete_file(path: str) -> str:
         """Deletes a file or directory.
         Args:
             path: The absolute path of the file to delete.
         """
-        return execute_delete(path, safeword_active=True)
+        return execute_delete(path, safeword_active=True, conversation_id=_current_conversation_id)
 
     def write_file(path: str, content: str, mode: str) -> str:
         """Writes content to a file.
@@ -640,7 +643,7 @@ def chat_stream(user_message: str):
             content: The text content to write.
             mode: 'append' to add to the end of the file, or 'overwrite' to replace it entirely.
         """
-        return execute_write(path, content, mode, safeword_active=True)
+        return execute_write(path, content, mode, safeword_active=True, conversation_id=_current_conversation_id)
 
     def search_files(keyword: str) -> str:
         """Searches the local file index for files matching a keyword.
@@ -651,8 +654,11 @@ def chat_stream(user_message: str):
         """
         print(f"[TOOL EXECUTED] search_files: {keyword}")
         results = search_files_by_name(keyword)
+        import json
         if not results:
+            record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result="success (no results)", conversation_id=_current_conversation_id)
             return f"No files found matching '{keyword}' in the indexed directories."
+        record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result=f"success ({len(results)} found)", conversation_id=_current_conversation_id)
         lines = []
         for r in results:
             size_kb = round(r['size_bytes'] / 1024, 1)
@@ -906,6 +912,8 @@ def handle_tool_response(accept: bool) -> dict | str:
                 result = f"Error: Tool {name} not recognized."
         else:
             result = "ERROR: The user REJECTED this operation. Acknowledge this and ask what else you can do."
+            import json
+            record_action(name, json.dumps(args), reversible=False, decision_outcome="rejected", execution_result="User rejected", conversation_id=_current_conversation_id)
 
         _pending_ollama_messages.append({
             "role": "tool",
@@ -958,6 +966,12 @@ def handle_tool_response(accept: bool) -> dict | str:
                 result = f"Error: Tool {call.name} not recognized."
         else:
             result = "ERROR: The user REJECTED this operation. Acknowledge this and ask what else you can do."
+            import json
+            if isinstance(call.args, dict):
+                args_dict = call.args
+            else:
+                args_dict = dict(call.args.items()) if hasattr(call.args, 'items') else {}
+            record_action(call.name, json.dumps(args_dict), reversible=False, decision_outcome="rejected", execution_result="User rejected", conversation_id=_current_conversation_id)
 
         function_responses.append(
             types.Part.from_function_response(
