@@ -26,6 +26,7 @@ export interface Message {
     diff: string
   }
   tool_resolution?: 'accepted' | 'rejected'
+  chart_data_uri?: string
 }
 
 // Safeword constant (matches backend: prompts/system_prompt.py)
@@ -195,6 +196,23 @@ function App(): JSX.Element {
                       : msg
                   )
                 )
+              } else if (event.type === 'chart') {
+                const chartMessage: Message = {
+                  id: `chart-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                  role: 'assistant',
+                  content: '',
+                  chart_data_uri: event.data_uri
+                }
+                setMessages((prev) => {
+                  const newMessages = [...prev]
+                  const streamIdx = newMessages.findIndex((m) => m.id === streamingId)
+                  if (streamIdx !== -1) {
+                    newMessages.splice(streamIdx, 0, chartMessage)
+                  } else {
+                    newMessages.push(chartMessage)
+                  }
+                  return newMessages
+                })
               } else if (event.type === 'tool_proposal') {
                 toolProposal = event.proposal
               }
