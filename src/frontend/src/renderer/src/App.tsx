@@ -4,6 +4,7 @@ import IndexPanel from './components/IndexPanel'
 import SystemPanel from './components/SystemPanel'
 import CommandPalette from './components/CommandPalette'
 import OnboardingWizard from './components/OnboardingWizard'
+import type { StatusResponse } from './env.d'
 import litheLogo from './assets/lithe-mark-hero.svg'
 
 // ---------------------------------------------------------------------------
@@ -40,11 +41,7 @@ function App(): JSX.Element {
   const [isOnline, setIsOnline] = useState(false)
   const [needsOnboarding, setNeedsOnboarding] = useState(false)
   const [safewordActive, setSafewordActive] = useState(false)
-  const [status, setStatus] = useState<{
-    watcher_active: boolean
-    watched_dirs: Array<{ path: string; file_count: number }>
-    last_event_time: number | null
-  } | null>(null)
+  const [status, setStatus] = useState<StatusResponse | null>(null)
 
   const [logs, setLogs] = useState<LogEvent[]>([])
   const [lastEventTime, setLastEventTime] = useState<number | null>(null)
