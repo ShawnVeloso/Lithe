@@ -211,16 +211,34 @@ contextBridge.exposeInMainWorld('litheAPI', {
     return await response.json()
   },
 
-  submitApiKey: async (apiKey: string) => {
+  /**
+   * Submit the API key for onboarding.
+   */
+  submitApiKey: async (apiKey: string): Promise<void> => {
     const response = await fetch(`${PYTHON_SERVER_URL}/api/onboarding`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: apiKey })
     })
+    
     if (!response.ok) {
       throw new Error(`Server error: ${response.status} ${response.statusText}`)
     }
     // Reload window after short delay so backend can restart or re-read
     setTimeout(() => window.location.reload(), 1000)
+  },
+
+  /**
+   * Bridge renderer errors to main process.
+   */
+  logError: (message: string, stack: string): Promise<void> => {
+    return ipcRenderer.invoke('log-error', message, stack)
+  },
+
+  /**
+   * Open the native OS file explorer to the logs folder.
+   */
+  openLogsFolder: (): Promise<void> => {
+    return ipcRenderer.invoke('open-logs-folder')
   }
 })
