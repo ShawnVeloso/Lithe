@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { StatusResponse } from '../env.d'
-import type { LogEvent } from './App'
+import type { LogEvent } from '../App'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -21,7 +21,7 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
   const [isExpanded, setIsExpanded] = useState(true)
   const [filterText, setFilterText] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
-  
+
   const [showExportUI, setShowExportUI] = useState(false)
   const [exportFormat, setExportFormat] = useState('json')
   const [exportFrom, setExportFrom] = useState('')
@@ -49,7 +49,7 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
     setAutoScroll(isAtBottom)
   }
 
-  const filteredLogs = logs.filter(log => 
+  const filteredLogs = logs.filter(log =>
     log.path.toLowerCase().includes(filterText.toLowerCase())
   )
 
@@ -98,7 +98,7 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
             </span>
           )}
         </span>
-        <button 
+        <button
           className="header-action-btn system-toggle-btn"
           onClick={() => setIsExpanded(!isExpanded)}
         >
@@ -108,9 +108,9 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
 
       {isExpanded && (
         <div className="system-log-container">
-          <div 
-            className="system-log-feed" 
-            ref={logFeedRef} 
+          <div
+            className="system-log-feed"
+            ref={logFeedRef}
             onScroll={handleScroll}
           >
             {filteredLogs.length === 0 ? (
@@ -197,7 +197,7 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
         <div className="system-stat">
           <span className="system-stat__label">tokens:</span>
           {tokens ? (
-            <span 
+            <span
               className={`system-stat__value ${status?.token_budget_warning && tokens.total > status.token_budget_warning ? 'system-stat__value--accent' : ''}`}
               title={`Prompt: ${tokens.prompt} / Candidates: ${tokens.candidates} / Total: ${tokens.total} (Budget: ${status?.token_budget_warning || 'None'})`}
             >
@@ -216,7 +216,7 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
         {status?.active_engine === 'ollama' && status?.ollama_model && !status.ollama_model.includes('llama3.1') && !status.ollama_model.includes('mistral') && (
           <>
             <div className="system-stat">
-              <span 
+              <span
                 className="system-stat__value system-stat__value--accent"
                 title="File searching and modification are disabled on this local fallback model"
               >
@@ -269,7 +269,7 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
             [↓ audit]
           </span>
         </div>
-        
+
         <span className="system-separator" />
 
         {/* View Logs Button */}
@@ -289,34 +289,34 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
             [VIEW LOGS]
           </span>
         </div>
-        
+
         {showExportUI && (
           <>
             <span className="system-separator" />
             <div className="system-stat" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <select 
-                value={exportFormat} 
+              <select
+                value={exportFormat}
                 onChange={(e) => setExportFormat(e.target.value)}
                 style={{ background: 'transparent', color: 'var(--text)', border: '1px solid var(--border)', fontFamily: 'inherit', outline: 'none' }}
               >
                 <option value="json" style={{ background: 'var(--bg-panel)' }}>JSON</option>
                 <option value="csv" style={{ background: 'var(--bg-panel)' }}>CSV</option>
               </select>
-              <input 
-                type="date" 
-                value={exportFrom} 
-                onChange={(e) => setExportFrom(e.target.value)} 
+              <input
+                type="date"
+                value={exportFrom}
+                onChange={(e) => setExportFrom(e.target.value)}
                 title="From Date"
                 style={{ background: 'transparent', color: 'var(--text)', border: '1px solid var(--border)', fontFamily: 'inherit', outline: 'none', padding: '0 4px' }}
               />
-              <input 
-                type="date" 
-                value={exportTo} 
-                onChange={(e) => setExportTo(e.target.value)} 
+              <input
+                type="date"
+                value={exportTo}
+                onChange={(e) => setExportTo(e.target.value)}
                 title="To Date"
                 style={{ background: 'transparent', color: 'var(--text)', border: '1px solid var(--border)', fontFamily: 'inherit', outline: 'none', padding: '0 4px' }}
               />
-              <button 
+              <button
                 onClick={handleExport}
                 style={{ background: 'var(--text-dim)', color: 'var(--bg-main)', border: 'none', padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.8rem', fontWeight: 600 }}
               >
