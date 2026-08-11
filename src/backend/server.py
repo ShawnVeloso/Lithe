@@ -20,29 +20,39 @@ import uvicorn
 from fastapi import FastAPI, BackgroundTasks, WebSocket, WebSocketDisconnect, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, Response
+from fastapi.requests import Request
 from pydantic import BaseModel
 from typing import List, Optional
 
 from src.backend.brain import chat
 from src.backend.indexer import walk_and_index
 from src.backend.watcher import start_watcher
+from src.backend.logger import logger
 
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
 app = FastAPI(title="Lithe Backend", version="0.1.0")
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled exception on {request.method} {request.url.path}: {exc}")
+    return JSONResponse(status_code=500, content={"error": "Internal Server Error"})
+
 
 @app.on_event("startup")
 def auto_index_and_watch():
     """Index whitelisted directories on boot, then start the file watcher."""
     def _index_then_watch():
-        from src.backend.changelog import generate_changelog
-        generate_changelog()
-        walk_and_index()
-        start_watcher()
+        try:
+            from src.backend.changelog import generate_changelog
+            generate_changelog()
+            walk_and_index()
+            start_watcher()
+        except Exception as e:
+            logger.exception(f"Fatal error during background startup tasks: {e}")
 
-    print("[Lithe] Auto-indexing whitelisted directories in the background...")
+    logger.info("[Lithe] Auto-indexing whitelisted directories in the background...")
     thread = threading.Thread(target=_index_then_watch, daemon=True)
     thread.start()
 
@@ -437,10 +447,21 @@ async def websocket_watcher_log(websocket: WebSocket):
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    import uvicorn
+    import logging
+
+    class InterceptHandler(logging.Handler):
+        def emit(self, record):
+            logger.handle(record)
+            
+    logging.getLogger("uvicorn").handlers = [InterceptHandler()]
+    logging.getLogger("uvicorn.error").handlers = [InterceptHandler()]
+    logging.getLogger("uvicorn.access").handlers = [InterceptHandler()]
+    
     uvicorn.run(
-        "src.backend.server:app",
+        app,
         host="127.0.0.1",
         port=8321,
         reload=False,
-        log_level="info",
+        log_config=None,
     )

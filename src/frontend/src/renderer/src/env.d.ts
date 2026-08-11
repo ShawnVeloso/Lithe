@@ -35,6 +35,8 @@ interface LitheAPI {
   undoAction: (actionId: number) => Promise<{status: string}>
   getChatHistory: () => Promise<{history: Array<any>}>
   submitApiKey: (apiKey: string) => Promise<void>
+  logError: (message: string, stack: string) => Promise<void>
+  openLogsFolder: () => Promise<void>
 }
 
 declare global {
