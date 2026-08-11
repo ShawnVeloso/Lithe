@@ -12,6 +12,7 @@
 | Write TypeScript/React code for the Electron UI. | Install heavy dependencies (like heavy ML libraries) without asking. |
 | Use SQLite for local memory and vector storage. | Hardcode API keys or credentials directly into scripts. |
 | Ask for clarification if a feature is ambiguous. | Guess at system-level file paths; always dynamically locate them. |
+| | Spawn browser automation agents or any autonomous browser session to interact with GitHub (creating PRs, filling forms, clicking merge, etc.) without my explicit request first. |
 
 ---
 
@@ -52,6 +53,10 @@ Before you consider a task complete, verify:
 * **Open a PR, even solo.** Push the branch, open a pull request into `main` with a
   short description of what changed and why. This creates a review checkpoint and a
   searchable history, even with a single reviewer (you).
+  After pushing a branch, stop. Print the PR creation link from git's output
+  and let the user open, review, and create the PR themselves. Do not create,
+  fill out, or submit the PR yourself, by browser automation or any other
+  method, unless explicitly asked.
 * **Never commit secrets.** `.env`, API keys, and the SQLite DB must stay gitignored.
   If a secret is ever accidentally committed and pushed, treat it as compromised —
   rotate it immediately, don't just delete the commit.
