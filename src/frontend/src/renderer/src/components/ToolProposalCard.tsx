@@ -42,7 +42,7 @@ export default function ToolProposalCard({ proposal, resolution, onRespond }: To
       </div>
       <div className="tool-proposal__diff">
         <pre>
-          {proposal.diff.split('\n').map((line, i) => {
+          {(proposal.diff || '').split('\n').map((line, i) => {
             let className = ''
             if (line.startsWith('+')) className = 'diff-add'
             else if (line.startsWith('-')) className = 'diff-remove'
