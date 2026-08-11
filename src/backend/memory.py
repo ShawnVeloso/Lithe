@@ -307,15 +307,13 @@ def record_action(
         conn.commit()
 
 def get_action_history(limit: int = 5) -> List[Dict[str, Any]]:
-    """Returns the most recent actions for the Undo Stack."""
+    """Returns the most recent actions."""
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
             """
             SELECT id, tool_name, details_json, reversible, timestamp
             FROM action_history
-            WHERE tool_name IN ('rename_file', 'delete_file', 'write_file')
-              AND (decision_outcome = 'accepted' OR decision_outcome = '' OR decision_outcome IS NULL)
             ORDER BY timestamp DESC
             LIMIT ?
             """,
