@@ -83,6 +83,8 @@ else:
 _LITHE_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH: Path = _LITHE_DIR / "lithe_memory.db"
+LOGS_DIR: Path = _LITHE_DIR / "logs"
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_EXCLUDED_EXTENSIONS = [
     ".xnb", ".pak", ".vpk", ".uasset", ".umap", ".unity3d", ".assets",

@@ -270,6 +270,26 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
           </span>
         </div>
         
+        <span className="system-separator" />
+
+        {/* View Logs Button */}
+        <div className="system-stat">
+          <span
+            className="system-stat__value system-stat__value--accent"
+            style={{ cursor: 'pointer', opacity: 0.8 }}
+            onClick={async () => {
+              try {
+                await window.litheAPI.openLogsFolder()
+              } catch (e) {
+                alert(`Failed to open logs: ${e}`)
+              }
+            }}
+            title="Open logs folder"
+          >
+            [VIEW LOGS]
+          </span>
+        </div>
+        
         {showExportUI && (
           <>
             <span className="system-separator" />
