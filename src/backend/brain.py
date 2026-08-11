@@ -30,6 +30,7 @@ from src.backend.prompts.system_prompt import (
 from src.backend.retrieval import get_file_contexts
 from src.backend.tools import execute_rename, execute_delete, execute_write
 from src.backend.memory import search_files_by_name, record_action
+from src.backend.data_tools import profile_data
 
 # Global state for pausing execution during tool confirmation
 _pending_session: list[types.Content] | None = None
@@ -188,6 +189,20 @@ OLLAMA_TOOLS_SCHEMA = [
                     "keyword": {"type": "string", "description": "A partial filename or keyword to search for."}
                 },
                 "required": ["keyword"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "profile_data",
+            "description": "Reads a CSV or Excel file and returns summary statistics, data types, and null counts. Use this to understand the structure and contents of a dataset.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "The filename or absolute path of the dataset (.csv or .xlsx)."}
+                },
+                "required": ["file_path"]
             }
         }
     }
@@ -437,12 +452,21 @@ def chat(user_message: str) -> str:
             lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
         return f"Found {len(results)} file(s) matching '{keyword}':\n" + "\n".join(lines)
 
-    tools = [rename_file, delete_file, write_file, search_files]
+    def profile_data_wrapper(file_path: str) -> str:
+        """Reads a CSV or Excel file and returns summary statistics, data types, and null counts.
+        Use this to understand the structure and contents of a dataset.
+        Args:
+            file_path: The filename or absolute path of the dataset (.csv or .xlsx).
+        """
+        return profile_data(file_path, conversation_id=_current_conversation_id)
+
+    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper]
     tool_map = {
         "rename_file": rename_file,
         "delete_file": delete_file,
         "write_file": write_file,
         "search_files": search_files,
+        "profile_data": profile_data_wrapper,
     }
 
     config = types.GenerateContentConfig(
@@ -672,12 +696,21 @@ def chat_stream(user_message: str):
             lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
         return f"Found {len(results)} file(s) matching '{keyword}':\n" + "\n".join(lines)
 
-    tools = [rename_file, delete_file, write_file, search_files]
+    def profile_data_wrapper(file_path: str) -> str:
+        """Reads a CSV or Excel file and returns summary statistics, data types, and null counts.
+        Use this to understand the structure and contents of a dataset.
+        Args:
+            file_path: The filename or absolute path of the dataset (.csv or .xlsx).
+        """
+        return profile_data(file_path, conversation_id=_current_conversation_id)
+
+    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper]
     tool_map = {
         "rename_file": rename_file,
         "delete_file": delete_file,
         "write_file": write_file,
         "search_files": search_files,
+        "profile_data": profile_data_wrapper,
     }
 
     config = types.GenerateContentConfig(

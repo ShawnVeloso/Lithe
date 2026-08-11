@@ -1,7 +1,7 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-11T22:38 (PHT)
+> **Last Updated:** 2026-08-11T23:15 (PHT)
 
 ---
 
@@ -224,4 +224,5 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-11 | Antigravity | **Bugfix:** Exported `StatusResponse` and `LitheAPI` in `env.d.ts` to fix TypeScript import error in `SystemPanel.tsx`. |
 | 2026-08-11 | Antigravity | **Bugfix (PR #9):** Fixed double-click re-fire risk on `ToolProposalCard.tsx`. Changed `finally { setIsResponding(false) }` to only re-enable buttons in `catch` block; on success, buttons stay locked until parent provides `resolution` prop. Branch: `fix/tool-proposal-double-click`. |
 | 2026-08-11 | Antigravity | **TS Cleanup (PR #10):** Resolved all 7 remaining TypeScript compilation errors. Fixed stale inline status type in `App.tsx` (replaced with imported `StatusResponse`), added `vite-env.d.ts` ambient SVG module declaration, changed `files` to `include` in `tsconfig.node.json` to support glob patterns. `tsc --noEmit` now passes with zero errors. Branch: `fix/ts-cleanup`. |
-| 2026-08-11 | Antigravity | **Policy Change:** Updated `docs/AGENT_PLAYBOOK.md` to explicitly forbid using autonomous browser agents to create or manage GitHub PRs unless explicitly requested. Agents must print the git PR creation link and stop. |
+| 2026-08-11 | Antigravity | Added policy against PR creation by autonomous agents to AGENT_PLAYBOOK.md |
+| 2026-08-11 | Antigravity | Implemented `profile_data` data science tool (Branch 1) with pandas integration for CSV/Excel profiling. |
