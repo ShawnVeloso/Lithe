@@ -27,6 +27,7 @@ yarn-error.log*
 # --- Electron Build Artifacts ---
 out/
 release/
+*.tsbuildinfo
 
 # --- IDE ---
 .vscode/

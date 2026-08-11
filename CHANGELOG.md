@@ -7,6 +7,7 @@ Auto-generated from `docs/agent-logs/INDEX.md`.
 - **Branch Cleanup:** Merged `feature/audit-log-export` to `main`. Deleted `feature/ollama-native-tool-calling`, `fix/new-conversation-support`, `fix/ollama-search-hallucination`, and `feature/audit-log-export` branches.
 - **Test Fix:** Created `fix/chat-history-test-signature` to fix outdated `test_save_and_get_chat_history` signature and pushed.
 - **Crash Logging Init:** Created `fix/crash-logging`, restored defensive UI stash (ErrorBoundary, ToolProposalCard). Drafted implementation plan for full logging architecture.
+- **Crash Logging Complete:** Implemented native rotating logs (`backend.log`, `electron.log`, `child.log`), secrets masking, unified IPC error bridging, ErrorBoundary, global exception handlers, and the `[VIEW LOGS]` UI button. Verified crashes manually.
 
 ## 2026-08-10
 - **Feature 1 (Tier 3): Streaming Responses (SSE).** Added `chat_stream()` generator to `brain.py` using `generate_content_stream` for token-by-token Gemini output. Added `GET /api/chat/stream` SSE endpoint to `server.py`. Implemented `chatStream()` in preload with `ReadableStream` SSE parsing. Rewired `App.tsx` to create a streaming placeholder message and progressively render tokens via `onToken` callback. Added `.streaming-cursor` CSS animation to `MessageBubble.tsx`. Mutating tool proposals (`write_file`, `delete_file`, `rename_file`) still pause the stream and render `ToolProposalCard` for confirmation. Ollama fallback yields full response as single chunk.
