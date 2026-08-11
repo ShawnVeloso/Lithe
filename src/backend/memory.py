@@ -53,7 +53,7 @@ def init_db() -> None:
             """
         )
 
-        # --- Feature 3 (Tier 2): Undo Stack ---
+        # --- Feature 3 (Tier 2): Undo Stack + Audit Log ---
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS action_history (
@@ -61,7 +61,10 @@ def init_db() -> None:
                 tool_name TEXT NOT NULL,
                 details_json TEXT NOT NULL,
                 reversible BOOLEAN NOT NULL DEFAULT 1,
-                timestamp REAL NOT NULL
+                timestamp REAL NOT NULL,
+                decision_outcome TEXT DEFAULT '',
+                execution_result TEXT DEFAULT '',
+                conversation_id TEXT DEFAULT ''
             )
             """
         )
@@ -94,6 +97,15 @@ def init_db() -> None:
         ]
         if "conversation_id" not in existing_msg_cols:
             cursor.execute("ALTER TABLE messages ADD COLUMN conversation_id TEXT DEFAULT 'default'")
+
+        # --- Migration: add audit columns to action_history ---
+        existing_ah_cols = [
+            col[1] for col in cursor.execute("PRAGMA table_info(action_history)").fetchall()
+        ]
+        if "decision_outcome" not in existing_ah_cols:
+            cursor.execute("ALTER TABLE action_history ADD COLUMN decision_outcome TEXT DEFAULT ''")
+            cursor.execute("ALTER TABLE action_history ADD COLUMN execution_result TEXT DEFAULT ''")
+            cursor.execute("ALTER TABLE action_history ADD COLUMN conversation_id TEXT DEFAULT ''")
 
         # Create an index on extension for faster filtering of research files
         cursor.execute(
@@ -275,31 +287,57 @@ def get_file_count_by_directory(roots: List[str]) -> List[Dict[str, Any]]:
 
 import time
 
-def record_action(tool_name: str, details_json: str, reversible: bool = True) -> None:
-    """Records an action in the undo stack."""
+def record_action(
+    tool_name: str, 
+    details_json: str, 
+    reversible: bool = True,
+    decision_outcome: str = "",
+    execution_result: str = "",
+    conversation_id: str = ""
+) -> None:
+    """Records an action in the undo stack / audit log."""
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO action_history (tool_name, details_json, reversible, timestamp)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO action_history (tool_name, details_json, reversible, timestamp, decision_outcome, execution_result, conversation_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (tool_name, details_json, reversible, time.time())
+            (tool_name, details_json, reversible, time.time(), decision_outcome, execution_result, conversation_id)
         )
         conn.commit()
 
 def get_action_history(limit: int = 5) -> List[Dict[str, Any]]:
-    """Returns the most recent actions."""
+    """Returns the most recent actions for the Undo Stack."""
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
             """
             SELECT id, tool_name, details_json, reversible, timestamp
             FROM action_history
+            WHERE tool_name IN ('rename_file', 'delete_file', 'write_file')
+              AND (decision_outcome = 'accepted' OR decision_outcome = '' OR decision_outcome IS NULL)
             ORDER BY timestamp DESC
             LIMIT ?
             """,
             (limit,)
         )
+        return [dict(row) for row in cursor.fetchall()]
+
+def export_action_history(from_timestamp: float | None = None, to_timestamp: float | None = None) -> List[Dict[str, Any]]:
+    """Returns all actions, optionally filtered by timestamp, for the Audit Log."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = "SELECT * FROM action_history WHERE 1=1"
+        params = []
+        if from_timestamp is not None:
+            query += " AND timestamp >= ?"
+            params.append(from_timestamp)
+        if to_timestamp is not None:
+            query += " AND timestamp <= ?"
+            params.append(to_timestamp)
+        query += " ORDER BY timestamp ASC"
+        
+        cursor.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
 
 def get_action_by_id(action_id: int) -> Dict[str, Any]:

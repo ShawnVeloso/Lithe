@@ -72,7 +72,7 @@ def _run_with_timeout(fn, *args):
 # Tool functions (exposed to the LLM via function calling)
 # ---------------------------------------------------------------------------
 
-def execute_rename(source: str, destination: str, safeword_active: bool) -> str:
+def execute_rename(source: str, destination: str, safeword_active: bool, conversation_id: str = "") -> str:
     """
     Executes a file or directory rename/move operation.
     """
@@ -100,17 +100,25 @@ def execute_rename(source: str, destination: str, safeword_active: bool) -> str:
         record_action(
             "rename_file",
             json.dumps({"source": source, "destination": destination}),
-            reversible=True
+            reversible=True,
+            decision_outcome="accepted",
+            execution_result="success",
+            conversation_id=conversation_id
         )
         return f"SUCCESS: Renamed/moved '{source}' to '{destination}'."
 
     try:
-        return _run_with_timeout(_do_rename)
+        res = _run_with_timeout(_do_rename)
+        if res.startswith("ERROR"):
+            record_action("rename_file", json.dumps({"source": source, "destination": destination}), reversible=False, decision_outcome="accepted", execution_result=res, conversation_id=conversation_id)
+        return res
     except Exception as e:
-        return f"ERROR: Failed to rename file: {str(e)}"
+        err = f"ERROR: Failed to rename file: {str(e)}"
+        record_action("rename_file", json.dumps({"source": source, "destination": destination}), reversible=False, decision_outcome="accepted", execution_result=err, conversation_id=conversation_id)
+        return err
 
 
-def execute_delete(path: str, safeword_active: bool) -> str:
+def execute_delete(path: str, safeword_active: bool, conversation_id: str = "") -> str:
     """
     Executes a file deletion operation.
     """
@@ -136,7 +144,10 @@ def execute_delete(path: str, safeword_active: bool) -> str:
             record_action(
                 "delete_file",
                 json.dumps({"path": path, "is_dir": True}),
-                reversible=False
+                reversible=False,
+                decision_outcome="accepted",
+                execution_result="success",
+                conversation_id=conversation_id
             )
             return f"SUCCESS: Deleted directory '{path}'."
         else:
@@ -146,16 +157,24 @@ def execute_delete(path: str, safeword_active: bool) -> str:
             record_action(
                 "delete_file",
                 json.dumps({"path": path, "is_dir": False, "content": content}),
-                reversible=True
+                reversible=True,
+                decision_outcome="accepted",
+                execution_result="success",
+                conversation_id=conversation_id
             )
             return f"SUCCESS: Deleted file '{path}'."
 
     try:
-        return _run_with_timeout(_do_delete)
+        res = _run_with_timeout(_do_delete)
+        if res.startswith("ERROR"):
+            record_action("delete_file", json.dumps({"path": path}), reversible=False, decision_outcome="accepted", execution_result=res, conversation_id=conversation_id)
+        return res
     except Exception as e:
-        return f"ERROR: Failed to delete path: {str(e)}"
+        err = f"ERROR: Failed to delete path: {str(e)}"
+        record_action("delete_file", json.dumps({"path": path}), reversible=False, decision_outcome="accepted", execution_result=err, conversation_id=conversation_id)
+        return err
 
-def execute_write(path: str, content: str, mode: str, safeword_active: bool) -> str:
+def execute_write(path: str, content: str, mode: str, safeword_active: bool, conversation_id: str = "") -> str:
     """
     Executes a file write operation (append or overwrite).
     """
@@ -200,11 +219,19 @@ def execute_write(path: str, content: str, mode: str, safeword_active: bool) -> 
         record_action(
             "write_file",
             json.dumps({"path": path, "is_new": is_new_file, "old_content": old_content}),
-            reversible=True
+            reversible=True,
+            decision_outcome="accepted",
+            execution_result="success",
+            conversation_id=conversation_id
         )
         return f"SUCCESS: Wrote to file '{path}' in {mode} mode."
 
     try:
-        return _run_with_timeout(_do_write)
+        res = _run_with_timeout(_do_write)
+        if res.startswith("ERROR"):
+            record_action("write_file", json.dumps({"path": path}), reversible=False, decision_outcome="accepted", execution_result=res, conversation_id=conversation_id)
+        return res
     except Exception as e:
-        return f"ERROR: Failed to write to file: {str(e)}"
+        err = f"ERROR: Failed to write to file: {str(e)}"
+        record_action("write_file", json.dumps({"path": path}), reversible=False, decision_outcome="accepted", execution_result=err, conversation_id=conversation_id)
+        return err

@@ -30,6 +30,8 @@
 | U-06 | HUD Redesign (Three-Pane Terminal UI) | Phase 4: Visual Identity | ✅ Complete |
 | U-07 | UI & UX Fixes | Phase 4.1: Visual Polish | ✅ Complete |
 | U-08 | Indexing Efficiency Upgrades | Phase 5: Performance | ✅ Complete |
+| U-09 | Fast-Fail Fallback | Phase 2: Reliability | ✅ Complete |
+| U-10 | Audit Log Export | Tier 3 | ✅ Complete |
 
 ---
 
@@ -168,3 +170,11 @@
 **Implementation:**
 - [x] **Fast-Fail Fallback (Backend):** Enforced a strict 5.0-second timeout in `brain.py`'s `genai.Client(http_options={'timeout': 5.0})` to instantly route failed connections to local compute.
 - [x] **Active Engine Telemetry (Full Stack):** Injected a global `active_engine` tracker into `brain.py`, exposed via `/api/status`, and dynamically rendered an inline `[Engine: Gemini]` or blue `[Engine: Ollama (Local)]` indicator into the header of `SystemPanel.tsx`.
+
+## U-10 — Audit Log Export (Tier 3)
+**Rationale:** The user requires a structured way to export all AI decisions, proposed tools, execution results, and conversation context for auditing and review, expanding the existing Undo Stack's `action_history` table without breaking it.
+**Implementation:**
+- [x] **Database Migration:** Extended `action_history` in `memory.py` with `decision_outcome`, `execution_result`, and `conversation_id`.
+- [x] **Tool Wrappers:** Modified `tools.py` and `brain.py` to record non-mutating actions (like `search_files`) and rejected/failed operations, distinguishing them from successful mutating tools used by the Undo Stack.
+- [x] **REST API:** Added `GET /api/audit/export` endpoint in `server.py` supporting `application/json` and `text/csv` formats, with ISO date range filtering (`from` and `to`).
+- [x] **HUD UI:** Added an inline `[↓ audit]` toggle in `SystemPanel.tsx` to configure format, pick dates, and trigger a Blob download with error handling for malformed requests.

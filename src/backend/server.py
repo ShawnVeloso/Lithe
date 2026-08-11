@@ -17,9 +17,11 @@ import threading
 
 import asyncio
 import uvicorn
-from fastapi import FastAPI, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, BackgroundTasks, WebSocket, WebSocketDisconnect, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, JSONResponse, Response
 from pydantic import BaseModel
+from typing import List, Optional
 
 from src.backend.brain import chat
 from src.backend.indexer import walk_and_index
@@ -182,6 +184,60 @@ async def chat_history_endpoint():
         formatted.append(msg)
         
     return {"history": formatted}
+
+@app.get("/api/audit/export")
+async def audit_export_endpoint(
+    format: str = "json",
+    from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to")
+):
+    """Exports the audit log in JSON or CSV format with optional date range filtering."""
+    from src.backend.memory import export_action_history
+    import json
+    import csv
+    import io
+    from datetime import datetime
+    
+    from_timestamp = None
+    to_timestamp = None
+    
+    if from_date:
+        try:
+            from_timestamp = datetime.fromisoformat(from_date.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Malformed 'from' date. Must be ISO format.")
+            
+    if to_date:
+        try:
+            to_timestamp = datetime.fromisoformat(to_date.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Malformed 'to' date. Must be ISO format.")
+            
+    history = export_action_history(from_timestamp, to_timestamp)
+    
+    if format.lower() == "csv":
+        output = io.StringIO()
+        if history:
+            writer = csv.DictWriter(output, fieldnames=history[0].keys())
+            writer.writeheader()
+            writer.writerows(history)
+        else:
+            # write empty header if no data
+            writer = csv.DictWriter(output, fieldnames=["id", "tool_name", "details_json", "reversible", "timestamp", "decision_outcome", "execution_result", "conversation_id"])
+            writer.writeheader()
+            
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"}
+        )
+    else:
+        # Default to JSON
+        return Response(
+            content=json.dumps(history, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename=audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"}
+        )
 
 
 @app.post("/api/chat/new")

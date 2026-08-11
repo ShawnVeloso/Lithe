@@ -1,7 +1,7 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-10T23:50 (PHT)
+> **Last Updated:** 2026-08-11T06:36 (PHT)
 
 ---
 
@@ -215,3 +215,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-10 | Antigravity | **Bugfix:** Added `_check_hallucination` to `brain.py` to prevent hallucinated tool execution. Applied the circuit breaker to both Gemini and Ollama fallback paths (both standard and streaming endpoints). Expanded detection to block fabricated `search_files` results in addition to mutating tools. |
 | 2026-08-10 | Antigravity | **Feature:** Added 'Tool Execution Limited' warning badge in `SystemPanel.tsx` and tailored hallucination error messages for the Ollama fallback. Logged future native tool-calling upgrade. |
 | 2026-08-10 | Antigravity | **Feature:** Implemented Native Tool Calling for Ollama Fallback. Refactored `_ollama_chat()` to use Ollama's `tools` parameter, parsing responses for `tool_calls` and triggering the same `ToolProposalCard` intercept logic as Gemini. Updated `handle_tool_response()` to resume Ollama sessions properly. Unblocked RAG file searching on offline fallbacks. Removed Ollama-specific circuit breakers in `_check_hallucination` as they are no longer necessary. Changed default `.env` and `config.py` model to `llama3.1`. |
+| 2026-08-11 | Antigravity | **Feature 4 (Tier 3): Audit Log Export.** Extended `action_history` table schema in `memory.py` with `decision_outcome`, `execution_result`, and `conversation_id`. Modified tool wrappers in `tools.py` and `brain.py` to record both mutating and non-mutating (`search_files`) actions, as well as rejected/failed proposals. Preserved existing Undo Stack functionality. Added `GET /api/audit/export` endpoint in `server.py` supporting JSON/CSV output with ISO date filtering. Built an inline `[↓ audit]` HUD toggle in `SystemPanel.tsx` to configure formats, select date ranges, and download the Blob. |

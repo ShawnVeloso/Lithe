@@ -2,6 +2,9 @@
 
 Auto-generated from `docs/agent-logs/INDEX.md`.
 
+## 2026-08-11
+- **Feature 4 (Tier 3): Audit Log Export.** Extended `action_history` table schema in `memory.py` with `decision_outcome`, `execution_result`, and `conversation_id`. Modified tool wrappers in `tools.py` and `brain.py` to record both mutating and non-mutating (`search_files`) actions, as well as rejected/failed proposals. Preserved existing Undo Stack functionality. Added `GET /api/audit/export` endpoint in `server.py` supporting JSON/CSV output with ISO date filtering. Built an inline `[↓ audit]` HUD toggle in `SystemPanel.tsx` to configure formats, select date ranges, and download the Blob.
+
 ## 2026-08-10
 - **Feature 1 (Tier 3): Streaming Responses (SSE).** Added `chat_stream()` generator to `brain.py` using `generate_content_stream` for token-by-token Gemini output. Added `GET /api/chat/stream` SSE endpoint to `server.py`. Implemented `chatStream()` in preload with `ReadableStream` SSE parsing. Rewired `App.tsx` to create a streaming placeholder message and progressively render tokens via `onToken` callback. Added `.streaming-cursor` CSS animation to `MessageBubble.tsx`. Mutating tool proposals (`write_file`, `delete_file`, `rename_file`) still pause the stream and render `ToolProposalCard` for confirmation. Ollama fallback yields full response as single chunk.
 - **Bugfix:** Added New Conversation support. Modified `memory.py` to add `conversation_id` to the `messages` table schema and migrated existing records. Added `_current_conversation_id` global state to `brain.py` and a `new_conversation()` function to generate UUIDs. Created `POST /api/chat/new` in `server.py` and exposed it via `preload/index.ts`. Added a "New Chat" button to the `[02] CHAT` panel header in `ChatWindow.tsx` that clears UI state and resets backend conversation ID.
