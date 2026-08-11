@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, statSync, unlinkSync, renameSync, appendFileSync
 // Native Logging Setup
 // ---------------------------------------------------------------------------
 const isDev = !app.isPackaged
-const logsDir = isDev 
+const logsDir = isDev
   ? join(__dirname, '../../../../.lithe/logs')
   : join(app.getPath('appData'), 'Lithe', 'logs')
 
@@ -31,10 +31,10 @@ function appendLog(file: string, message: string) {
       }
     }
     const timestamp = new Date().toISOString()
-    
+
     // Mask GEMINI_API_KEY if present
     const maskedMessage = message.replace(/(GEMINI_API_KEY\s*[=:]\s*['"]?)[^\s'"]+(['"]?)/g, '$1********$2')
-    
+
     appendFileSync(file, `[${timestamp}] ${maskedMessage}\n`)
   } catch (err) {
     // Failsafe: print to stdout
@@ -198,7 +198,7 @@ function createWindow(): BrowserWindow {
   ipcMain.handle('get-health', async () => {
     return checkBackendHealth()
   })
-  
+
   ipcMain.handle('log-error', (_, message: string, stack: string) => {
     logMain(`[Renderer Error] ${message}\n${stack}`)
   })
