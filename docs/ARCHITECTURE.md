@@ -65,7 +65,14 @@ Lithe is packaged as a standalone Windows application (`.exe`) using a two-step 
 
 In production, the Electron main process spawns the bundled PyInstaller backend (`lithe-server.exe`) instead of relying on a system Python installation. Configuration variables (`.env` and the SQLite database) are loaded from the user's AppData directory (`%APPDATA%\Lithe`) to ensure persistence and proper permissions without requiring admin rights.
 
-## 7. Key Dependencies
+## 7. Error Handling & Logging
+Lithe uses a unified crash logging architecture across all processes. All log files are stored in `%APPDATA%/Lithe/logs` (production) or `.lithe/logs` (development).
+
+- **Backend Engine**: Uses `logging.handlers.RotatingFileHandler` combined with a custom `SecretsMasker` to redact `GEMINI_API_KEY`. Exceptions are caught globally by FastAPI (`@app.exception_handler`) and inside unhandled startup threads (like the file indexer). Logs are written to `backend.log`.
+- **Electron Main**: Captures native `uncaughtException`, `unhandledRejection`, and IPC invocation errors. Writes to `electron.log` using a lightweight, native `fs` file rotation (max 5MB, 1 backup). It also captures the Python backend's raw stdout/stderr streams into a separate `child.log`.
+- **Renderer UI**: Uses a React `ErrorBoundary` and global `window.onerror` to capture component crashes and unhandled UI exceptions. These errors are bridged via IPC to the main process and written to `electron.log`. A `[VIEW LOGS]` button in the System Panel opens the log folder natively.
+
+## 8. Key Dependencies
 
 ### Python Backend
 | Package | Version | Purpose |

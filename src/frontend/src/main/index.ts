@@ -2,7 +2,64 @@ import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, ChildProcess } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, mkdirSync, statSync, unlinkSync, renameSync, appendFileSync } from 'fs'
+
+// ---------------------------------------------------------------------------
+// Native Logging Setup
+// ---------------------------------------------------------------------------
+const isDev = !app.isPackaged
+const logsDir = isDev 
+  ? join(__dirname, '../../../../.lithe/logs')
+  : join(app.getPath('appData'), 'Lithe', 'logs')
+
+if (!existsSync(logsDir)) {
+  mkdirSync(logsDir, { recursive: true })
+}
+
+const mainLogFile = join(logsDir, 'electron.log')
+const childLogFile = join(logsDir, 'child.log')
+
+function appendLog(file: string, message: string) {
+  try {
+    if (existsSync(file)) {
+      const stats = statSync(file)
+      if (stats.size > 5 * 1024 * 1024) {
+        // Rotate: keep 1 backup
+        const backup = file + '.1'
+        if (existsSync(backup)) unlinkSync(backup)
+        renameSync(file, backup)
+      }
+    }
+    const timestamp = new Date().toISOString()
+    
+    // Mask GEMINI_API_KEY if present
+    const maskedMessage = message.replace(/(GEMINI_API_KEY\s*[=:]\s*['"]?)[^\s'"]+(['"]?)/g, '$1********$2')
+    
+    appendFileSync(file, `[${timestamp}] ${maskedMessage}\n`)
+  } catch (err) {
+    // Failsafe: print to stdout
+    process.stdout.write(`Failed to write to log file: ${err}\n`)
+  }
+}
+
+function logMain(message: string) {
+  appendLog(mainLogFile, message)
+  process.stdout.write(message + '\n')
+}
+
+function logChild(message: string) {
+  appendLog(childLogFile, message)
+  process.stdout.write(message + '\n')
+}
+
+// Global exception handlers
+process.on('uncaughtException', (error) => {
+  logMain(`[Uncaught Exception] ${error.message}\n${error.stack}`)
+})
+
+process.on('unhandledRejection', (reason) => {
+  logMain(`[Unhandled Rejection] ${reason}`)
+})
 
 // ---------------------------------------------------------------------------
 // Python server management
@@ -51,16 +108,16 @@ function startPythonServer(): void {
 
   pythonProcess.stdout?.on('data', (data: Buffer) => {
     const msg = data.toString().trim()
-    if (msg) process.stdout.write(`[Lithe Python] ${msg}\n`)
+    if (msg) logChild(`[STDOUT] ${msg}`)
   })
 
   pythonProcess.stderr?.on('data', (data: Buffer) => {
     const msg = data.toString().trim()
-    if (msg) process.stderr.write(`[Lithe Python] ${msg}\n`)
+    if (msg) logChild(`[STDERR] ${msg}`)
   })
 
   pythonProcess.on('error', (err: Error) => {
-    process.stderr.write(`[Lithe] Failed to start Python server: ${err.message}\n`)
+    logMain(`[Lithe] Failed to start Python server: ${err.message}`)
   })
 }
 
@@ -137,6 +194,18 @@ function createWindow(): BrowserWindow {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  ipcMain.handle('get-health', async () => {
+    return checkBackendHealth()
+  })
+  
+  ipcMain.handle('log-error', (_, message: string, stack: string) => {
+    logMain(`[Renderer Error] ${message}\n${stack}`)
+  })
+
+  ipcMain.handle('open-logs-folder', () => {
+    shell.openPath(logsDir)
+  })
 
   ipcMain.handle('dialog:showOpenDialog', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {

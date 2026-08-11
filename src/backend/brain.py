@@ -49,10 +49,16 @@ _current_conversation_id: str | None = None
 last_token_counts = {"prompt": 0, "candidates": 0, "total": 0}
 active_engine = "gemini"
 
+from src.backend.logger import logger
+
 # ---------------------------------------------------------------------------
 # Gemini client (initialized once at module load)
 # ---------------------------------------------------------------------------
-_client = genai.Client(api_key=GEMINI_API_KEY)
+try:
+    _client = genai.Client(api_key=GEMINI_API_KEY)
+except Exception as e:
+    logger.exception(f"Fatal error during Gemini client initialization: {e}")
+    _client = None
 
 # --- Feature 4 (Tier 2): Persistent Chat History ---
 import uuid
