@@ -1,7 +1,7 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-11T16:45 (PHT)
+> **Last Updated:** 2026-08-11T19:02 (PHT)
 
 ---
 
@@ -220,3 +220,5 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-11 | Antigravity | **Test Fix:** Created `fix/chat-history-test-signature` to fix outdated `test_save_and_get_chat_history` signature and pushed. |
 | 2026-08-11 | Antigravity | **Crash Logging Init:** Created `fix/crash-logging`, restored defensive UI stash (ErrorBoundary, ToolProposalCard). Drafted implementation plan for full logging architecture. |
 | 2026-08-11 | Antigravity | **Crash Logging Complete:** Implemented native rotating logs (`backend.log`, `electron.log`, `child.log`), secrets masking, unified IPC error bridging, ErrorBoundary, global exception handlers, and the `[VIEW LOGS]` UI button. Verified crashes manually. |
+| 2026-08-11 | Antigravity | **Bugfix:** Fixed incorrect import path for `LogEvent` in `SystemPanel.tsx`. |
+| 2026-08-11 | Antigravity | **Bugfix:** Exported `StatusResponse` and `LitheAPI` in `env.d.ts` to fix TypeScript import error in `SystemPanel.tsx`. |

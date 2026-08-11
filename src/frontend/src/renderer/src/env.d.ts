@@ -1,8 +1,9 @@
 /**
  * Type declarations for the Lithe preload API exposed via contextBridge.
  */
+import type React from 'react'
 
-interface StatusResponse {
+export interface StatusResponse {
   watcher_active: boolean
   watched_dirs: Array<{ path: string; file_count: number }>
   excluded_extensions: string[]
@@ -18,7 +19,7 @@ interface StatusResponse {
   ollama_model: string
 }
 
-interface LitheAPI {
+export interface LitheAPI {
   chat: (message: string) => Promise<{response: string; tool_proposal?: any}>
   newChat: () => Promise<{conversation_id: string}>
   toolResponse: (accept: boolean) => Promise<{response: string; tool_proposal?: any}>
@@ -42,6 +43,12 @@ interface LitheAPI {
 declare global {
   interface Window {
     litheAPI: LitheAPI
+  }
+
+  // Restore global JSX namespace for React 19 compatibility
+  namespace JSX {
+    interface Element extends React.JSX.Element {}
+    interface IntrinsicElements extends React.JSX.IntrinsicElements {}
   }
 }
 
