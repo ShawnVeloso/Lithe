@@ -50,10 +50,10 @@ def test_upsert_and_search_files(mock_db_path):
 
 def test_save_and_get_chat_history(mock_db_path):
     """Test saving and retrieving chat history."""
-    memory.save_message("msg1", "user", "hello")
-    memory.save_message("msg2", "assistant", "world", '{"name": "tool"}', '{"status": "ok"}')
+    memory.save_message("msg1", "default", "user", "hello")
+    memory.save_message("msg2", "default", "assistant", "world", '{"name": "tool"}', '{"status": "ok"}')
     
-    history = memory.get_chat_history()
+    history = memory.get_chat_history("default")
     assert len(history) == 2
     assert history[0]["id"] == "msg1"
     assert history[0]["role"] == "user"
