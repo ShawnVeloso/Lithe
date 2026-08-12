@@ -28,6 +28,8 @@ function MessageBubble({ message, onToolResponse }: MessageBubbleProps): JSX.Ele
             resolution={message.tool_resolution}
             onRespond={onToolResponse || (async () => {})}
           />
+        ) : message.chart_data_uri ? (
+          <img src={message.chart_data_uri} alt={message.content || 'Chart'} className="message-chart" />
         ) : (
           <span className="message-text">
             {message.content}
