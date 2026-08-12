@@ -22,6 +22,7 @@ If you're unsure whether a task needs the wider context, err on the side of read
 Every time you make code changes, complete a task, or when the user communicates a change of plan, vision, or architecture, you MUST:
 - **Update the Log:** Append a new row to the "Log Entries" table in `docs/agent-logs/INDEX.md` containing the date, your agent name, and a summary of what you did.
 - **Update the Timestamp:** Update the "Last Updated" timestamp at the top of `docs/agent-logs/INDEX.md`.
+- **Update Current Focus:** Update the "Current Focus" block at the top of `docs/agent-logs/INDEX.md`. It should always reflect current reality, not be left stale.
 - **Sync Features & Architecture:** If the user introduces a new feature, changes a requirement, or alters the architecture, you must immediately update `docs/FEATURES.md` and/or `docs/ARCHITECTURE.md` to reflect the new state.
 
 **Do not wait for the user to ask you to update the docs. It is your responsibility to keep them continuously synced as a living record.**

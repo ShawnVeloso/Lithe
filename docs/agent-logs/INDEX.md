@@ -1,7 +1,15 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-11T23:15 (PHT)
+> **Last Updated:** 2026-08-12T23:18 (PHT)
+
+---
+
+## Current Focus
+- **Working on:** Adding Current Focus block and updating standing rules
+- **Next up:** Tier 3 watch-and-summarize
+- **Then:** TBD
+- **Blocked on:** nothing
 
 ---
 
@@ -226,3 +234,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-11 | Antigravity | **TS Cleanup (PR #10):** Resolved all 7 remaining TypeScript compilation errors. Fixed stale inline status type in `App.tsx` (replaced with imported `StatusResponse`), added `vite-env.d.ts` ambient SVG module declaration, changed `files` to `include` in `tsconfig.node.json` to support glob patterns. `tsc --noEmit` now passes with zero errors. Branch: `fix/ts-cleanup`. |
 | 2026-08-11 | Antigravity | Added policy against PR creation by autonomous agents to AGENT_PLAYBOOK.md |
 | 2026-08-11 | Antigravity | Implemented `profile_data` data science tool (Branch 1) with pandas integration for CSV/Excel profiling. |
+| 2026-08-12 | Antigravity | Added Current Focus block to INDEX.md and standing update rule to AGENTS.md |
