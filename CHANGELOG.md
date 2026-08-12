@@ -8,6 +8,13 @@ Auto-generated from `docs/agent-logs/INDEX.md`.
 - **Test Fix:** Created `fix/chat-history-test-signature` to fix outdated `test_save_and_get_chat_history` signature and pushed.
 - **Crash Logging Init:** Created `fix/crash-logging`, restored defensive UI stash (ErrorBoundary, ToolProposalCard). Drafted implementation plan for full logging architecture.
 - **Crash Logging Complete:** Implemented native rotating logs (`backend.log`, `electron.log`, `child.log`), secrets masking, unified IPC error bridging, ErrorBoundary, global exception handlers, and the `[VIEW LOGS]` UI button. Verified crashes manually.
+- **Bugfix:** Fixed incorrect import path for `LogEvent` in `SystemPanel.tsx`.
+- **Bugfix:** Exported `StatusResponse` and `LitheAPI` in `env.d.ts` to fix TypeScript import error in `SystemPanel.tsx`.
+- **Bugfix (PR #9):** Fixed double-click re-fire risk on `ToolProposalCard.tsx`. Changed `finally { setIsResponding(false) }` to only re-enable buttons in `catch` block; on success, buttons stay locked until parent provides `resolution` prop. Branch: `fix/tool-proposal-double-click`.
+- **TS Cleanup (PR #10):** Resolved all 7 remaining TypeScript compilation errors. Fixed stale inline status type in `App.tsx` (replaced with imported `StatusResponse`), added `vite-env.d.ts` ambient SVG module declaration, changed `files` to `include` in `tsconfig.node.json` to support glob patterns. `tsc --noEmit` now passes with zero errors. Branch: `fix/ts-cleanup`.
+- Added policy against PR creation by autonomous agents to AGENT_PLAYBOOK.md
+- Implemented `profile_data` data science tool (Branch 1) with pandas integration for CSV/Excel profiling.
+- Implemented `inline_chart` data science tool (Branch 2) with matplotlib integration, base64 chart rendering, and SSE `chart` event handling.
 
 ## 2026-08-10
 - **Feature 1 (Tier 3): Streaming Responses (SSE).** Added `chat_stream()` generator to `brain.py` using `generate_content_stream` for token-by-token Gemini output. Added `GET /api/chat/stream` SSE endpoint to `server.py`. Implemented `chatStream()` in preload with `ReadableStream` SSE parsing. Rewired `App.tsx` to create a streaming placeholder message and progressively render tokens via `onToken` callback. Added `.streaming-cursor` CSS animation to `MessageBubble.tsx`. Mutating tool proposals (`write_file`, `delete_file`, `rename_file`) still pause the stream and render `ToolProposalCard` for confirmation. Ollama fallback yields full response as single chunk.
