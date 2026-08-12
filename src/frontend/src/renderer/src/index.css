@@ -1021,3 +1021,10 @@ body {
   font-size: 12px;
   font-style: italic;
 }
+
+.message-chart {
+  max-width: 100%;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  margin: 8px 0;
+}

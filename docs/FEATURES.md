@@ -32,6 +32,7 @@
 | U-08 | Indexing Efficiency Upgrades | Phase 5: Performance | ✅ Complete |
 | U-09 | Fast-Fail Fallback | Phase 2: Reliability | ✅ Complete |
 | U-10 | Audit Log Export | Tier 3 | ✅ Complete |
+| U-11 | Data Science Tools (`profile_data`, `inline_chart`) | Tier 3 | ✅ Complete |
 
 ---
 
@@ -176,5 +177,12 @@
 **Implementation:**
 - [x] **Database Migration:** Extended `action_history` in `memory.py` with `decision_outcome`, `execution_result`, and `conversation_id`.
 - [x] **Tool Wrappers:** Modified `tools.py` and `brain.py` to record non-mutating actions (like `search_files`) and rejected/failed operations, distinguishing them from successful mutating tools used by the Undo Stack.
-- [x] **REST API:** Added `GET /api/audit/export` endpoint in `server.py` supporting `application/json` and `text/csv` formats, with ISO date range filtering (`from` and `to`).
 - [x] **HUD UI:** Added an inline `[↓ audit]` toggle in `SystemPanel.tsx` to configure format, pick dates, and trigger a Blob download with error handling for malformed requests.
+
+## U-11 — Data Science Tools (Tier 3)
+**Rationale:** A capable assistant needs to be able to analyze structured datasets instantly without requiring the user to open Excel or Jupyter notebooks. Providing LLM-native tools to profile and visualize data allows the agent to conduct autonomous exploratory data analysis (EDA).
+**Implementation:**
+- [x] **`profile_data` Tool:** Added to `data_tools.py`. Uses `pandas` to load CSV and Excel files, safely handling huge files by row caps, and returns `.describe()`, `dtypes`, and null counts as structured text for the LLM to read.
+- [x] **`inline_chart` Tool:** Added to `data_tools.py`. Uses `matplotlib` in `Agg` backend to render bar, line, scatter, and histogram plots. Includes defensive error handling to return clear column missing strings instead of exceptions.
+- [x] **Streaming UI Integration:** Extended the backend `chat_stream()` to immediately yield a `chart` SSE event when `inline_chart` generates a valid base64 PNG data URI.
+- [x] **Frontend Rendering:** `App.tsx` intercepts the `chart` event and injects a dedicated chart Message before the text stream begins. `MessageBubble.tsx` renders the base64 URI natively as an `<img>` with `.message-chart` styles.

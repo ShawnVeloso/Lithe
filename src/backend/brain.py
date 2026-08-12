@@ -30,7 +30,8 @@ from src.backend.prompts.system_prompt import (
 from src.backend.retrieval import get_file_contexts
 from src.backend.tools import execute_rename, execute_delete, execute_write
 from src.backend.memory import search_files_by_name, record_action
-from src.backend.data_tools import profile_data
+from src.backend.memory import search_files_by_name, record_action
+from src.backend.data_tools import profile_data, inline_chart
 
 # Global state for pausing execution during tool confirmation
 _pending_session: list[types.Content] | None = None
@@ -203,6 +204,24 @@ OLLAMA_TOOLS_SCHEMA = [
                     "file_path": {"type": "string", "description": "The filename or absolute path of the dataset (.csv or .xlsx)."}
                 },
                 "required": ["file_path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "inline_chart",
+            "description": "Reads a dataset and generates an inline chart (bar, line, scatter, hist). Returns the chart image to the user directly.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "The dataset file path (.csv or .xlsx)."},
+                    "chart_type": {"type": "string", "description": "Type of chart: 'bar', 'line', 'scatter', or 'hist'."},
+                    "x_column": {"type": "string", "description": "Column for the X axis."},
+                    "y_column": {"type": "string", "description": "Column for the Y axis (required for bar, line, scatter)."},
+                    "title": {"type": "string", "description": "Optional title for the chart."}
+                },
+                "required": ["file_path", "chart_type", "x_column"]
             }
         }
     }
@@ -460,13 +479,26 @@ def chat(user_message: str) -> str:
         """
         return profile_data(file_path, conversation_id=_current_conversation_id)
 
-    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper]
+    def inline_chart_wrapper(file_path: str, chart_type: str, x_column: str, y_column: str = "", title: str = "") -> str:
+        """Reads a dataset and generates an inline chart (bar, line, scatter, hist).
+        Returns the chart image to the user directly.
+        Args:
+            file_path: The dataset file path (.csv or .xlsx).
+            chart_type: Type of chart: 'bar', 'line', 'scatter', or 'hist'.
+            x_column: Column for the X axis.
+            y_column: Column for the Y axis (required for bar, line, scatter).
+            title: Optional title for the chart.
+        """
+        return inline_chart(file_path, chart_type, x_column, y_column, title, conversation_id=_current_conversation_id)
+
+    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper, inline_chart_wrapper]
     tool_map = {
         "rename_file": rename_file,
         "delete_file": delete_file,
         "write_file": write_file,
         "search_files": search_files,
         "profile_data": profile_data_wrapper,
+        "inline_chart": inline_chart_wrapper,
     }
 
     config = types.GenerateContentConfig(
@@ -545,6 +577,7 @@ def chat(user_message: str) -> str:
             # Non-mutating tools execute immediately
             contents.append(response.candidates[0].content)
             function_responses = []
+            chart_data_uri = None
             for call in response.function_calls:
                 # Execute the python function mapped to the tool name
                 if call.name in tool_map:
@@ -557,13 +590,21 @@ def chat(user_message: str) -> str:
                 else:
                     result = f"Error: Tool {call.name} not recognized."
 
-                # Append the result to the responses
-                function_responses.append(
-                    types.Part.from_function_response(
-                        name=call.name,
-                        response={"result": result}
+                if call.name == "inline_chart" and isinstance(result, str) and result.startswith("data:image"):
+                    chart_data_uri = result
+                    function_responses.append(
+                        types.Part.from_function_response(
+                            name=call.name,
+                            response={"result": "Chart generated and sent to user successfully."}
+                        )
                     )
-                )
+                else:
+                    function_responses.append(
+                        types.Part.from_function_response(
+                            name=call.name,
+                            response={"result": result}
+                        )
+                    )
 
             # Append the function responses as the user's reply
             contents.append(
@@ -599,6 +640,8 @@ def chat(user_message: str) -> str:
         _chat_history.append(model_content)
         _save_content(model_content)
 
+        if 'chart_data_uri' in locals() and chart_data_uri:
+            return {"chart": chart_data_uri, "text": response.text}
         return response.text
 
     except (errors.APIError, httpx.TimeoutException, Exception) as e:
@@ -704,13 +747,26 @@ def chat_stream(user_message: str):
         """
         return profile_data(file_path, conversation_id=_current_conversation_id)
 
-    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper]
+    def inline_chart_wrapper(file_path: str, chart_type: str, x_column: str, y_column: str = "", title: str = "") -> str:
+        """Reads a dataset and generates an inline chart (bar, line, scatter, hist).
+        Returns the chart image to the user directly.
+        Args:
+            file_path: The dataset file path (.csv or .xlsx).
+            chart_type: Type of chart: 'bar', 'line', 'scatter', or 'hist'.
+            x_column: Column for the X axis.
+            y_column: Column for the Y axis (required for bar, line, scatter).
+            title: Optional title for the chart.
+        """
+        return inline_chart(file_path, chart_type, x_column, y_column, title, conversation_id=_current_conversation_id)
+
+    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper, inline_chart_wrapper]
     tool_map = {
         "rename_file": rename_file,
         "delete_file": delete_file,
         "write_file": write_file,
         "search_files": search_files,
         "profile_data": profile_data_wrapper,
+        "inline_chart": inline_chart_wrapper,
     }
 
     config = types.GenerateContentConfig(
@@ -836,12 +892,22 @@ def chat_stream(user_message: str):
                         result = f"Python Execution Error: {e}"
                 else:
                     result = f"Error: Tool {fc.name} not recognized."
-                function_responses.append(
-                    types.Part.from_function_response(
-                        name=fc.name,
-                        response={"result": result}
+                
+                if fc.name == "inline_chart" and isinstance(result, str) and result.startswith("data:image"):
+                    yield {"type": "chart", "data_uri": result}
+                    function_responses.append(
+                        types.Part.from_function_response(
+                            name=fc.name,
+                            response={"result": "Chart generated and sent to user successfully."}
+                        )
                     )
-                )
+                else:
+                    function_responses.append(
+                        types.Part.from_function_response(
+                            name=fc.name,
+                            response={"result": result}
+                        )
+                    )
 
             contents.append(types.Content(role="user", parts=function_responses))
 

@@ -82,7 +82,8 @@ class ExtensionRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
-    tool_proposal: dict | None = None
+    tool_proposal: Optional[dict] = None
+    chart: Optional[str] = None
 
 class ToolResponseRequest(BaseModel):
     accept: bool
@@ -124,10 +125,25 @@ async def onboarding_endpoint(request: OnboardingRequest):
 async def chat_endpoint(request: ChatRequest):
     """Primary chat endpoint: passes user message to Lithe's brain."""
     from src.backend.brain import chat
-    result = chat(request.message)
-    if isinstance(result, dict):
-        return ChatResponse(response="", tool_proposal=result.get("tool_proposal"))
-    return ChatResponse(response=result)
+    try:
+        response_text = chat(request.message)
+    except Exception as e:
+        logger.exception("Error during chat")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if isinstance(response_text, dict):
+        if "tool_proposal" in response_text:
+            return ChatResponse(
+                response="",
+                tool_proposal=response_text["tool_proposal"]
+            )
+        elif "chart" in response_text:
+            return ChatResponse(
+                response=response_text.get("text", ""),
+                chart=response_text["chart"]
+            )
+            
+    return ChatResponse(response=response_text)
 
 
 @app.get("/api/chat/stream")
