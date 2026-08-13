@@ -33,6 +33,7 @@
 | U-09 | Fast-Fail Fallback | Phase 2: Reliability | ✅ Complete |
 | U-10 | Audit Log Export | Tier 3 | ✅ Complete |
 | U-11 | Data Science Tools (`profile_data`, `inline_chart`) | Tier 3 | ✅ Complete |
+| U-12 | Watch-and-Summarize Rules (Segment 1: Storage) | Tier 3 | ✅ Complete |
 
 ---
 
@@ -186,3 +187,11 @@
 - [x] **`inline_chart` Tool:** Added to `data_tools.py`. Uses `matplotlib` in `Agg` backend to render bar, line, scatter, and histogram plots. Includes defensive error handling to return clear column missing strings instead of exceptions.
 - [x] **Streaming UI Integration:** Extended the backend `chat_stream()` to immediately yield a `chart` SSE event when `inline_chart` generates a valid base64 PNG data URI.
 - [x] **Frontend Rendering:** `App.tsx` intercepts the `chart` event and injects a dedicated chart Message before the text stream begins. `MessageBubble.tsx` renders the base64 URI natively as an `<img>` with `.message-chart` styles.
+
+## U-12 — Watch-and-Summarize Rules (Tier 3, Segment 1: Storage)
+**Rationale:** Users want to tell Lithe "watch my Downloads folder for PDFs and summarize them" — a persistent, rules-based automation. Segment 1 lays the foundation: a `watch_rules` SQLite table and three LLM-callable tools for CRUD management. Segments 2–3 will wire rules into the watcher and chat UI.
+**Implementation:**
+- [x] **`watch_rules` Table:** New table in `memory.py` with columns: `id`, `directory`, `pattern`, `action` (default `'summarize'`), `active` (boolean, default `1`), `created_at` (timestamp). Indexed on `(directory, active)`.
+- [x] **`watch_rules.py` Module:** New module with `create_watch_rule()`, `list_watch_rules()`, `delete_watch_rule()`. Validates directory against `INDEX_WHITELIST` at creation time. Uses soft delete (`active = 0`) for audit safety.
+- [x] **Tool Registration:** All three tools registered in `brain.py` — `tools` list + `tool_map` in both `chat()` and `chat_stream()`, plus `OLLAMA_TOOLS_SCHEMA`. Auto-execute without `ToolProposalCard` (DB-only operations). All mutations logged via `record_action()`.
+- [x] **Unit Tests:** 11 tests in `tests/test_watch_rules.py` — create (valid, subdirectory, invalid, normalised path), list (empty, populated), delete (valid, nonexistent, soft-delete, invalid type), full cycle integration.
