@@ -107,6 +107,23 @@ def init_db() -> None:
             cursor.execute("ALTER TABLE action_history ADD COLUMN execution_result TEXT DEFAULT ''")
             cursor.execute("ALTER TABLE action_history ADD COLUMN conversation_id TEXT DEFAULT ''")
 
+        # --- Watch-and-Summarize (Segment 1): Watch Rules ---
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS watch_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                directory TEXT NOT NULL,
+                pattern TEXT NOT NULL,
+                action TEXT NOT NULL DEFAULT 'summarize',
+                active BOOLEAN NOT NULL DEFAULT 1,
+                created_at REAL NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_watch_rules_dir_active ON watch_rules(directory, active)"
+        )
+
         # Create an index on extension for faster filtering of research files
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_files_extension ON files(extension)"
@@ -386,6 +403,56 @@ def get_chat_history(conversation_id: str) -> List[Dict[str, Any]]:
         cursor = conn.cursor()
         cursor.execute("SELECT id, role, content, tool_proposal_json, tool_resolution, timestamp FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC", (conversation_id,))
         return [dict(row) for row in cursor.fetchall()]
+
+# ---------------------------------------------------------------------------
+# Watch-and-Summarize: Watch Rules CRUD
+# ---------------------------------------------------------------------------
+
+def insert_watch_rule(directory: str, pattern: str, action: str = "summarize") -> int:
+    """Inserts a new watch rule and returns the new row's id."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO watch_rules (directory, pattern, action, active, created_at)
+            VALUES (?, ?, ?, 1, ?)
+            """,
+            (directory, pattern, action, time.time())
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+
+def get_active_watch_rules() -> List[Dict[str, Any]]:
+    """Returns all watch rules where active = 1."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, directory, pattern, action, created_at FROM watch_rules WHERE active = 1 ORDER BY created_at ASC"
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def soft_delete_watch_rule(rule_id: int) -> bool:
+    """Sets active = 0 for the given rule id. Returns True if the row existed."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE watch_rules SET active = 0 WHERE id = ? AND active = 1",
+            (rule_id,)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def get_watch_rule_by_id(rule_id: int) -> Dict[str, Any] | None:
+    """Returns a single watch rule by id, or None if not found."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM watch_rules WHERE id = ?", (rule_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
 
 # Ensure DB is initialized when this module is imported
 init_db()

@@ -1,14 +1,14 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-12T23:18 (PHT)
+> **Last Updated:** 2026-08-14T02:25 (PHT)
 
 ---
 
 ## Current Focus
-- **Working on:** Adding Current Focus block and updating standing rules
-- **Next up:** Tier 3 watch-and-summarize
-- **Then:** TBD
+- **Working on:** Watch-and-Summarize Segment 1 complete; ready for Segment 2 (watcher integration)
+- **Next up:** Segment 2 — wire watch_rules into watcher.py event loop
+- **Then:** Segment 3 — chat UI for rule management
 - **Blocked on:** nothing
 
 ---
@@ -27,6 +27,7 @@
 | **UPGRADE Phase 1** — Foundation & Safety | ✅ Complete | SQLite WAL mode, circuit breakers with path validation & timeouts |
 | **UPGRADE Phase 2** — Reliability | ✅ Complete | Ollama fallback with health check, configurable model/URL/timeout |
 | **UPGRADE Phase 3** — Efficiency & Context | ✅ Complete | Real-time file watcher (watchdog), heuristic category tagging |
+| **Watch-and-Summarize** — Segment 1 (Storage) | ✅ Complete | `watch_rules` table + 3 LLM tools (create/list/delete) |
 
 ---
 
@@ -50,7 +51,7 @@
 | [brain.py](file:///d:/Lithe/src/backend/brain.py) | F-01 + F-05 + F-06 + Phase 2 | `chat(user_message) → str` — Gemini client, function calling loop (rename, delete, search_files), safeword-gated tool wrappers, Ollama fallback via `_ollama_chat()` |
 | [server.py](file:///d:/Lithe/src/backend/server.py) | F-02 + F-03 + Phase 3 | FastAPI on `localhost:8321` — `POST /api/chat`, `GET /api/health`, `POST /api/index`; auto-indexes then starts file watcher on boot |
 | [server_entry.py](file:///d:/Lithe/src/backend/server_entry.py) | F-07 | PyInstaller entry point — standalone `.env` resolution for packaged mode |
-| [memory.py](file:///d:/Lithe/src/backend/memory.py) | F-03 + Phase 1 + Phase 3 | SQLite DB init with WAL mode + busy_timeout, schema with `category` column, `upsert_files()`, `delete_file_by_path()`, `find_file_paths()`, `search_files_by_name()` |
+| [memory.py](file:///d:/Lithe/src/backend/memory.py) | F-03 + Phase 1 + Phase 3 | SQLite DB init with WAL mode + busy_timeout, schema with `category` column, `upsert_files()`, `delete_file_by_path()`, `find_file_paths()`, `search_files_by_name()`, `watch_rules` table CRUD (`insert_watch_rule`, `get_active_watch_rules`, `soft_delete_watch_rule`) |
 | [indexer.py](file:///d:/Lithe/src/backend/indexer.py) | F-03 + Phase 3 | `walk_and_index()` using `os.walk` with strict exclusions, heuristic category tagging, batch upsert |
 | [heuristics.py](file:///d:/Lithe/src/backend/heuristics.py) | Phase 3 | `categorize_path()` — maps 15+ folder patterns and 20+ extension rules to semantic category tags |
 | [watcher.py](file:///d:/Lithe/src/backend/watcher.py) | Phase 3 | Real-time file system watcher via `watchdog`; debounced events (1s), auto-updates SQLite on create/modify/delete/move |
@@ -58,6 +59,7 @@
 | [tools.py](file:///d:/Lithe/src/backend/tools.py) | F-05 + Phase 1 | System-level functions (`rename_file`, `delete_file`) with circuit breakers: path validation (empty, null bytes, protected system dirs), path normalization (`realpath`), 30-second timeout wrapper via `concurrent.futures` |
 | [prompts/\_\_init\_\_.py](file:///d:/Lithe/src/backend/prompts/__init__.py) | — | Prompts package init |
 | [prompts/system_prompt.py](file:///d:/Lithe/src/backend/prompts/system_prompt.py) | F-06 | `CANDID_SYSTEM_PROMPT`, `COMPLIANT_SYSTEM_PROMPT`, `SAFEWORD`, `detect_safeword()` |
+| [watch_rules.py](file:///d:/Lithe/src/backend/watch_rules.py) | Watch-and-Summarize S1 | `create_watch_rule()`, `list_watch_rules()`, `delete_watch_rule()` — LLM-callable tools for managing per-directory watch rules |
 
 ### Electron Frontend (`src/frontend/`)
 
@@ -235,3 +237,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-11 | Antigravity | Added policy against PR creation by autonomous agents to AGENT_PLAYBOOK.md |
 | 2026-08-11 | Antigravity | Implemented `profile_data` data science tool (Branch 1) with pandas integration for CSV/Excel profiling. |
 | 2026-08-12 | Antigravity | Added Current Focus block to INDEX.md and standing update rule to AGENTS.md |
+| 2026-08-14 | Antigravity | **Watch-and-Summarize Segment 1:** Added `watch_rules` table to `memory.py`, created `watch_rules.py` with `create_watch_rule`/`list_watch_rules`/`delete_watch_rule` tools, registered all three in `brain.py` (`chat`, `chat_stream`, `OLLAMA_TOOLS_SCHEMA`). Soft-delete pattern, whitelist validation, 11 unit tests (all passing). Branch: `feature/watch-rules-storage`. |

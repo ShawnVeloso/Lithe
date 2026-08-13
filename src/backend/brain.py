@@ -32,6 +32,7 @@ from src.backend.tools import execute_rename, execute_delete, execute_write
 from src.backend.memory import search_files_by_name, record_action
 from src.backend.memory import search_files_by_name, record_action
 from src.backend.data_tools import profile_data, inline_chart
+from src.backend.watch_rules import create_watch_rule, list_watch_rules, delete_watch_rule
 
 # Global state for pausing execution during tool confirmation
 _pending_session: list[types.Content] | None = None
@@ -222,6 +223,47 @@ OLLAMA_TOOLS_SCHEMA = [
                     "title": {"type": "string", "description": "Optional title for the chart."}
                 },
                 "required": ["file_path", "chart_type", "x_column"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_watch_rule",
+            "description": "Creates a watch rule to monitor a directory for files matching a glob pattern. The directory must already be in the whitelist. The only supported action is 'summarize'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "description": "The absolute path of the directory to watch (must be whitelisted)."},
+                    "pattern": {"type": "string", "description": "A file glob pattern, e.g. '*.pdf' or 'report_*.csv'."}
+                },
+                "required": ["directory", "pattern"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_watch_rules",
+            "description": "Lists all active watch rules (directory, pattern, and creation date).",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_watch_rule",
+            "description": "Deletes (deactivates) a watch rule by its numeric ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "rule_id": {"type": "integer", "description": "The ID of the watch rule to delete."}
+                },
+                "required": ["rule_id"]
             }
         }
     }
@@ -491,7 +533,27 @@ def chat(user_message: str) -> str:
         """
         return inline_chart(file_path, chart_type, x_column, y_column, title, conversation_id=_current_conversation_id)
 
-    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper, inline_chart_wrapper]
+    def create_watch_rule_wrapper(directory: str, pattern: str) -> str:
+        """Creates a watch rule to monitor a directory for files matching a glob pattern.
+        The directory must already be in the whitelist. The only supported action is 'summarize'.
+        Args:
+            directory: The absolute path of the directory to watch (must be whitelisted).
+            pattern: A file glob pattern, e.g. '*.pdf' or 'report_*.csv'.
+        """
+        return create_watch_rule(directory, pattern, conversation_id=_current_conversation_id)
+
+    def list_watch_rules_wrapper() -> str:
+        """Lists all active watch rules (directory, pattern, and creation date)."""
+        return list_watch_rules(conversation_id=_current_conversation_id)
+
+    def delete_watch_rule_wrapper(rule_id: int) -> str:
+        """Deletes (deactivates) a watch rule by its numeric ID.
+        Args:
+            rule_id: The ID of the watch rule to delete.
+        """
+        return delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
+
+    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper, inline_chart_wrapper, create_watch_rule_wrapper, list_watch_rules_wrapper, delete_watch_rule_wrapper]
     tool_map = {
         "rename_file": rename_file,
         "delete_file": delete_file,
@@ -499,6 +561,9 @@ def chat(user_message: str) -> str:
         "search_files": search_files,
         "profile_data": profile_data_wrapper,
         "inline_chart": inline_chart_wrapper,
+        "create_watch_rule": create_watch_rule_wrapper,
+        "list_watch_rules": list_watch_rules_wrapper,
+        "delete_watch_rule": delete_watch_rule_wrapper,
     }
 
     config = types.GenerateContentConfig(
@@ -759,7 +824,27 @@ def chat_stream(user_message: str):
         """
         return inline_chart(file_path, chart_type, x_column, y_column, title, conversation_id=_current_conversation_id)
 
-    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper, inline_chart_wrapper]
+    def create_watch_rule_wrapper(directory: str, pattern: str) -> str:
+        """Creates a watch rule to monitor a directory for files matching a glob pattern.
+        The directory must already be in the whitelist. The only supported action is 'summarize'.
+        Args:
+            directory: The absolute path of the directory to watch (must be whitelisted).
+            pattern: A file glob pattern, e.g. '*.pdf' or 'report_*.csv'.
+        """
+        return create_watch_rule(directory, pattern, conversation_id=_current_conversation_id)
+
+    def list_watch_rules_wrapper() -> str:
+        """Lists all active watch rules (directory, pattern, and creation date)."""
+        return list_watch_rules(conversation_id=_current_conversation_id)
+
+    def delete_watch_rule_wrapper(rule_id: int) -> str:
+        """Deletes (deactivates) a watch rule by its numeric ID.
+        Args:
+            rule_id: The ID of the watch rule to delete.
+        """
+        return delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
+
+    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper, inline_chart_wrapper, create_watch_rule_wrapper, list_watch_rules_wrapper, delete_watch_rule_wrapper]
     tool_map = {
         "rename_file": rename_file,
         "delete_file": delete_file,
@@ -767,6 +852,9 @@ def chat_stream(user_message: str):
         "search_files": search_files,
         "profile_data": profile_data_wrapper,
         "inline_chart": inline_chart_wrapper,
+        "create_watch_rule": create_watch_rule_wrapper,
+        "list_watch_rules": list_watch_rules_wrapper,
+        "delete_watch_rule": delete_watch_rule_wrapper,
     }
 
     config = types.GenerateContentConfig(
