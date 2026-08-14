@@ -1,0 +1,126 @@
+import os
+import time
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+@pytest.fixture(autouse=True)
+def isolated_db(tmp_path, monkeypatch):
+    db_path = tmp_path / "test_memory.db"
+    monkeypatch.setattr("src.backend.config.DB_PATH", str(db_path))
+    monkeypatch.setattr("src.backend.memory.DB_PATH", str(db_path))
+    from src.backend import memory
+    memory.init_db()
+    
+    yield db_path
+    
+    # Cleanup to avoid locked DB issues across tests
+    try:
+        os.remove(str(db_path))
+    except Exception:
+        pass
+
+def test_watch_trigger_rule_matching(isolated_db):
+    """Confirm rule matching logic in watcher's _execute('create') dispatch."""
+    from src.backend.memory import insert_watch_rule
+    from src.backend.watcher import _LitheEventHandler
+    import os
+    
+    rule_dir = os.path.normcase(os.path.realpath("D:\\testdir"))
+    rule_id = insert_watch_rule(rule_dir, "*.txt", "summarize")
+    
+    handler = _LitheEventHandler()
+    
+    with patch("src.backend.watcher.threading.Thread") as mock_thread, \
+         patch("src.backend.watcher.upsert_files"), \
+         patch("src.backend.watcher.os.stat") as mock_stat:
+        
+        mock_stat.return_value.st_size = 100
+        mock_stat.return_value.st_mtime = time.time()
+        
+        # Test 1: Matching file (creation event)
+        test_path = os.path.join(rule_dir, "hello.txt")
+        handler._execute("create", test_path)
+        
+        assert mock_thread.called
+        args, kwargs = mock_thread.call_args
+        assert kwargs["target"].__name__ == "_run_with_timeout"
+        assert kwargs["args"][1] == test_path
+        assert kwargs["args"][2] == rule_id
+        mock_thread.reset_mock()
+        
+        # Test 2: Non-matching extension
+        handler._execute("create", os.path.join(rule_dir, "hello.md"))
+        assert not mock_thread.called
+        
+        # Test 3: Modify event (should not trigger summary)
+        handler._execute("upsert", test_path)
+        assert not mock_thread.called
+
+def test_summarize_file_for_watch_rule(isolated_db, tmp_path):
+    """Confirm summary generation and DB insertion."""
+    from src.backend.brain import summarize_file_for_watch_rule
+    from src.backend.memory import get_connection
+    
+    test_file = tmp_path / "hello.txt"
+    test_file.write_text("This is a test document.", encoding="utf-8")
+    
+    with patch("src.backend.brain._client") as mock_client:
+        mock_response = MagicMock()
+        mock_response.text = "Mock summary."
+        mock_client.models.generate_content.return_value = mock_response
+        
+        summary = summarize_file_for_watch_rule(str(test_file), rule_id=99)
+        assert summary == "Mock summary."
+        
+        # Verify DB insertion
+        with get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT summary, delivered FROM auto_summaries WHERE rule_id = 99")
+            row = c.fetchone()
+            assert row is not None
+            assert row["summary"] == "Mock summary."
+            assert row["delivered"] == 0
+
+def test_summarize_file_for_watch_rule_unsupported_binary(isolated_db, tmp_path):
+    """Confirm binary files are skipped gracefully."""
+    from src.backend.brain import summarize_file_for_watch_rule
+    
+    # Create a dummy binary file
+    test_file = tmp_path / "test.bin"
+    test_file.write_bytes(b"\x00\x01\x02\x03\xFF")
+    
+    # Should not even call LLM
+    with patch("src.backend.brain._client") as mock_client:
+        summary = summarize_file_for_watch_rule(str(test_file), rule_id=99)
+        assert "Skipped (Binary or Unsupported)" in summary
+        assert not mock_client.models.generate_content.called
+
+def test_active_rule_filtering(isolated_db):
+    """Confirm active=0 rules do not trigger."""
+    from src.backend.memory import insert_watch_rule, get_connection
+    from src.backend.watcher import _LitheEventHandler
+    import os
+    
+    rule_dir = os.path.normcase(os.path.realpath("D:\\testdir"))
+    rule_id = insert_watch_rule(rule_dir, "*.txt", "summarize")
+    
+    # Soft delete the rule
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE watch_rules SET active = 0 WHERE id = ?", (rule_id,))
+        conn.commit()
+        
+    handler = _LitheEventHandler()
+    
+    with patch("src.backend.watcher.threading.Thread") as mock_thread, \
+         patch("src.backend.watcher.upsert_files"), \
+         patch("src.backend.watcher.os.stat") as mock_stat:
+        
+        mock_stat.return_value.st_size = 100
+        mock_stat.return_value.st_mtime = time.time()
+        
+        test_path = os.path.join(rule_dir, "hello.txt")
+        handler._execute("create", test_path)
+        
+        assert not mock_thread.called, "Inactive rule should not have triggered dispatch"

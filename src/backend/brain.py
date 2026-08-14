@@ -27,12 +27,14 @@ from src.backend.prompts.system_prompt import (
     COMPLIANT_SYSTEM_PROMPT,
     detect_safeword,
 )
-from src.backend.retrieval import get_file_contexts
+from src.backend.retrieval import get_file_contexts, read_file_securely, MAX_FILE_SIZE_BYTES
 from src.backend.tools import execute_rename, execute_delete, execute_write
-from src.backend.memory import search_files_by_name, record_action
-from src.backend.memory import search_files_by_name, record_action
+from src.backend.memory import search_files_by_name, record_action, insert_auto_summary
 from src.backend.data_tools import profile_data, inline_chart
 from src.backend.watch_rules import create_watch_rule, list_watch_rules, delete_watch_rule
+import os
+import json
+import time
 
 # Global state for pausing execution during tool confirmation
 _pending_session: list[types.Content] | None = None
@@ -1211,6 +1213,83 @@ def handle_tool_response(accept: bool) -> dict | str:
     except Exception as e:
         _pending_session = None
         return f"Error continuing conversation: {str(e)}"
+
+
+def summarize_file_for_watch_rule(file_path: str, rule_id: int) -> str:
+    """
+    Standalone, one-off summarization call for the file watcher.
+    """
+    import pandas as pd
+    
+    try:
+        # Check size cap and read file
+        try:
+            stat = os.stat(file_path)
+            size = stat.st_size
+        except Exception as e:
+            return f"Error reading file info: {e}"
+        
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in ['.csv', '.xlsx', '.xls']:
+            nrows = 5000 if size > MAX_FILE_SIZE_BYTES else None
+            try:
+                if ext == '.csv':
+                    df = pd.read_csv(file_path, nrows=nrows)
+                else:
+                    df = pd.read_excel(file_path, nrows=nrows)
+                file_content = df.head(nrows or 50).to_string() if not df.empty else "Empty file."
+            except Exception as e:
+                return f"Error parsing data file: {e}"
+        else:
+            file_content, is_truncated = read_file_securely(file_path)
+            if file_content.startswith("[Binary or Unsupported"):
+                # Skip gracefully
+                return "Skipped (Binary or Unsupported)"
+                
+        prompt = f"Please summarize the following file ({os.path.basename(file_path)}):\n\n{file_content}"
+        
+        if _client:
+            try:
+                response = _client.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=CANDID_SYSTEM_PROMPT
+                    )
+                )
+                summary = response.text
+            except Exception:
+                # Fallback
+                response = _ollama_chat(CANDID_SYSTEM_PROMPT, prompt)
+                summary = response if isinstance(response, str) else response.get('text', str(response))
+        else:
+            response = _ollama_chat(CANDID_SYSTEM_PROMPT, prompt)
+            summary = response if isinstance(response, str) else response.get('text', str(response))
+            
+        if not summary:
+            summary = "Failed to generate summary."
+            
+        insert_auto_summary(rule_id, file_path, summary)
+        record_action(
+            "watch_rule_summary",
+            json.dumps({"file_path": file_path, "rule_id": rule_id}),
+            reversible=False,
+            decision_outcome="auto-executed",
+            execution_result="success",
+            conversation_id=""
+        )
+        return summary
+        
+    except Exception as e:
+        record_action(
+            "watch_rule_summary",
+            json.dumps({"file_path": file_path, "rule_id": rule_id}),
+            reversible=False,
+            decision_outcome="auto-executed",
+            execution_result=f"error: {str(e)}",
+            conversation_id=""
+        )
+        return f"Error: {str(e)}"
 
 
 # ---------------------------------------------------------------------------

@@ -124,6 +124,21 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_watch_rules_dir_active ON watch_rules(directory, active)"
         )
 
+        # --- Watch-and-Summarize (Segment 2): Auto Summaries ---
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auto_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_id INTEGER NOT NULL,
+                file_path TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                delivered BOOLEAN NOT NULL DEFAULT 0,
+                FOREIGN KEY(rule_id) REFERENCES watch_rules(id)
+            )
+            """
+        )
+
         # Create an index on extension for faster filtering of research files
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_files_extension ON files(extension)"
@@ -452,6 +467,21 @@ def get_watch_rule_by_id(rule_id: int) -> Dict[str, Any] | None:
         cursor.execute("SELECT * FROM watch_rules WHERE id = ?", (rule_id,))
         row = cursor.fetchone()
         return dict(row) if row else None
+
+
+def insert_auto_summary(rule_id: int, file_path: str, summary: str) -> int:
+    """Inserts a generated file summary into the auto_summaries table."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO auto_summaries (rule_id, file_path, summary, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (rule_id, file_path, summary, time.time())
+        )
+        conn.commit()
+        return cursor.lastrowid
 
 
 # Ensure DB is initialized when this module is imported
