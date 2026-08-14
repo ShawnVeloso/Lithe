@@ -195,3 +195,13 @@
 - [x] **`watch_rules.py` Module:** New module with `create_watch_rule()`, `list_watch_rules()`, `delete_watch_rule()`. Validates directory against `INDEX_WHITELIST` at creation time. Uses soft delete (`active = 0`) for audit safety.
 - [x] **Tool Registration:** All three tools registered in `brain.py` — `tools` list + `tool_map` in both `chat()` and `chat_stream()`, plus `OLLAMA_TOOLS_SCHEMA`. Auto-execute without `ToolProposalCard` (DB-only operations). All mutations logged via `record_action()`.
 - [x] **Unit Tests:** 11 tests in `tests/test_watch_rules.py` — create (valid, subdirectory, invalid, normalised path), list (empty, populated), delete (valid, nonexistent, soft-delete, invalid type), full cycle integration.
+
+## U-13 — Watch-and-Summarize Trigger (Tier 3, Segment 2: Logic)
+**Rationale:** The rules created in Segment 1 need to be hooked into the active file system watcher to actually trigger summarizations when files are dropped into the watched directories.
+**Implementation:**
+- [x] **`auto_summaries` Table:** Added to `memory.py` to persist generated summaries (`id`, `rule_id`, `file_path`, `summary`, `delivered`, `created_at`).
+- [x] **Event Differentiation:** Updated `watcher.py` to distinguish `"create"` events from `"upsert"` (modify) events, ensuring we don't repeatedly summarize files while they are being edited.
+- [x] **Rule Matching:** On file creation, `watcher.py` fetches active rules, matches the directory and `fnmatch` glob pattern.
+- [x] **Background Dispatch:** Matching files trigger `summarize_file_for_watch_rule` on a background thread wrapped in `_run_with_timeout` (30s) to prevent blocking the watcher's event loop.
+- [x] **Summarization Logic:** Created `summarize_file_for_watch_rule` in `brain.py`. Reuses `profile_data` logic for `.csv`/`.xlsx` and `read_file_securely` for text files. Uses Gemini with Ollama fallback, and skips unsupported binary files gracefully.
+- [x] **Auditing:** All summary generations (and failures) are recorded in `action_history` via `record_action`.

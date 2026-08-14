@@ -1,14 +1,14 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-14T02:25 (PHT)
+> **Last Updated:** 2026-08-15T02:16 (PHT)
 
 ---
 
 ## Current Focus
-- **Working on:** Watch-and-Summarize Segment 1 complete; ready for Segment 2 (watcher integration)
-- **Next up:** Segment 2 — wire watch_rules into watcher.py event loop
-- **Then:** Segment 3 — chat UI for rule management
+- **Working on:** Segment 3 — chat UI for rule management
+- **Next up:** 
+- **Then:** 
 - **Blocked on:** nothing
 
 ---
@@ -238,3 +238,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-11 | Antigravity | Implemented `profile_data` data science tool (Branch 1) with pandas integration for CSV/Excel profiling. |
 | 2026-08-12 | Antigravity | Added Current Focus block to INDEX.md and standing update rule to AGENTS.md |
 | 2026-08-14 | Antigravity | **Watch-and-Summarize Segment 1:** Added `watch_rules` table to `memory.py`, created `watch_rules.py` with `create_watch_rule`/`list_watch_rules`/`delete_watch_rule` tools, registered all three in `brain.py` (`chat`, `chat_stream`, `OLLAMA_TOOLS_SCHEMA`). Soft-delete pattern, whitelist validation, 11 unit tests (all passing). Branch: `feature/watch-rules-storage`. |
+| 2026-08-15 | Antigravity | **Watch-and-Summarize Segment 2:** Added `auto_summaries` table to `memory.py`. Wired `watch_rules` into `watcher.py` event loop on file creation with glob pattern matching. Implemented background summarization task using `summarize_file_for_watch_rule` in `brain.py` with 30s timeout circuit breaker. Added tests in `test_watch_trigger.py`. Branch: `feature/watch-rules-trigger`. |

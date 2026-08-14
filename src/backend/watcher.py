@@ -19,9 +19,12 @@ from watchdog.events import FileSystemEventHandler, FileSystemEvent
 
 from src.backend.config import INDEX_WHITELIST, EXCLUDED_EXTENSIONS
 from src.backend.indexer import EXCLUDED_DIRS
-from src.backend.memory import upsert_files, delete_file_by_path
+from src.backend.memory import upsert_files, delete_file_by_path, get_active_watch_rules
 from src.backend.heuristics import categorize_path
 from src.backend.broadcaster import broadcast_event
+from src.backend.brain import summarize_file_for_watch_rule
+from src.backend.tools import _run_with_timeout
+import fnmatch
 
 # Module-level state
 last_event_time: float | None = None
@@ -47,7 +50,7 @@ class _LitheEventHandler(FileSystemEventHandler):
 
     def on_created(self, event: FileSystemEvent):
         if not event.is_directory and not self._is_excluded(event.src_path):
-            self._schedule("upsert", event.src_path)
+            self._schedule("create", event.src_path)
 
     def on_modified(self, event: FileSystemEvent):
         if not event.is_directory and not self._is_excluded(event.src_path):
@@ -107,7 +110,7 @@ class _LitheEventHandler(FileSystemEventHandler):
             print(f"[Lithe Watcher] Removed: {os.path.basename(path)}")
             broadcast_event("removed", path)
 
-        elif action == "upsert":
+        elif action in ("upsert", "create"):
             try:
                 stat = os.stat(path)
                 _, ext = os.path.splitext(path)
@@ -123,6 +126,25 @@ class _LitheEventHandler(FileSystemEventHandler):
                 upsert_files([file_record])
                 print(f"[Lithe Watcher] Indexed: {os.path.basename(path)}")
                 broadcast_event("indexed", path)
+                
+                # --- Watch-and-Summarize Segment 2 ---
+                if action == "create":
+                    rules = get_active_watch_rules()
+                    file_dir = os.path.normcase(os.path.realpath(os.path.dirname(path)))
+                    file_name = os.path.basename(path)
+                    
+                    for rule in rules:
+                        rule_dir = os.path.normcase(os.path.realpath(rule["directory"]))
+                        if file_dir.startswith(rule_dir):
+                            if fnmatch.fnmatch(file_name, rule["pattern"]) or fnmatch.fnmatch(path, rule["pattern"]):
+                                threading.Thread(
+                                    target=_run_with_timeout, 
+                                    args=(summarize_file_for_watch_rule, path, rule["id"]),
+                                    daemon=True
+                                ).start()
+                                print(f"[Lithe Watcher] Dispatched summarization for {file_name}")
+
+
             except FileNotFoundError:
                 pass  # File was deleted before we could stat it
             except Exception as e:
