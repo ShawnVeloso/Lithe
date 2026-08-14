@@ -2,6 +2,12 @@
 
 Auto-generated from `docs/agent-logs/INDEX.md`.
 
+## 2026-08-14
+- **Watch-and-Summarize Segment 1:** Added `watch_rules` table to `memory.py`, created `watch_rules.py` with `create_watch_rule`/`list_watch_rules`/`delete_watch_rule` tools, registered all three in `brain.py` (`chat`, `chat_stream`, `OLLAMA_TOOLS_SCHEMA`). Soft-delete pattern, whitelist validation, 11 unit tests (all passing). Branch: `feature/watch-rules-storage`.
+
+## 2026-08-12
+- Added Current Focus block to INDEX.md and standing update rule to AGENTS.md
+
 ## 2026-08-11
 - **Feature 4 (Tier 3): Audit Log Export.** Extended `action_history` table schema in `memory.py` with `decision_outcome`, `execution_result`, and `conversation_id`. Modified tool wrappers in `tools.py` and `brain.py` to record both mutating and non-mutating (`search_files`) actions, as well as rejected/failed proposals. Preserved existing Undo Stack functionality. Added `GET /api/audit/export` endpoint in `server.py` supporting JSON/CSV output with ISO date filtering. Built an inline `[↓ audit]` HUD toggle in `SystemPanel.tsx` to configure formats, select date ranges, and download the Blob.
 - **Branch Cleanup:** Merged `feature/audit-log-export` to `main`. Deleted `feature/ollama-native-tool-calling`, `fix/new-conversation-support`, `fix/ollama-search-hallucination`, and `feature/audit-log-export` branches.
@@ -14,7 +20,6 @@ Auto-generated from `docs/agent-logs/INDEX.md`.
 - **TS Cleanup (PR #10):** Resolved all 7 remaining TypeScript compilation errors. Fixed stale inline status type in `App.tsx` (replaced with imported `StatusResponse`), added `vite-env.d.ts` ambient SVG module declaration, changed `files` to `include` in `tsconfig.node.json` to support glob patterns. `tsc --noEmit` now passes with zero errors. Branch: `fix/ts-cleanup`.
 - Added policy against PR creation by autonomous agents to AGENT_PLAYBOOK.md
 - Implemented `profile_data` data science tool (Branch 1) with pandas integration for CSV/Excel profiling.
-- Implemented `inline_chart` data science tool (Branch 2) with matplotlib integration, base64 chart rendering, and SSE `chart` event handling.
 
 ## 2026-08-10
 - **Feature 1 (Tier 3): Streaming Responses (SSE).** Added `chat_stream()` generator to `brain.py` using `generate_content_stream` for token-by-token Gemini output. Added `GET /api/chat/stream` SSE endpoint to `server.py`. Implemented `chatStream()` in preload with `ReadableStream` SSE parsing. Rewired `App.tsx` to create a streaming placeholder message and progressively render tokens via `onToken` callback. Added `.streaming-cursor` CSS animation to `MessageBubble.tsx`. Mutating tool proposals (`write_file`, `delete_file`, `rename_file`) still pause the stream and render `ToolProposalCard` for confirmation. Ollama fallback yields full response as single chunk.
