@@ -1267,7 +1267,16 @@ def summarize_file_for_watch_rule(file_path: str, rule_id: int) -> str:
             summary = response if isinstance(response, str) else response.get('text', str(response))
             
         if not summary:
-            summary = "Failed to generate summary."
+            error_msg = "Failed to generate summary."
+            record_action(
+                "watch_rule_summary",
+                json.dumps({"file_path": file_path, "rule_id": rule_id}),
+                reversible=False,
+                decision_outcome="auto-executed",
+                execution_result=f"error: {error_msg}",
+                conversation_id=""
+            )
+            return error_msg
             
         insert_auto_summary(rule_id, file_path, summary)
         record_action(

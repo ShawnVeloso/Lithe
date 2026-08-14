@@ -7,6 +7,7 @@ def test_profile_data(tmp_path, monkeypatch):
     # Setup test DB
     db_path = tmp_path / "test_memory.db"
     monkeypatch.setattr("src.backend.config.DB_PATH", str(db_path))
+    monkeypatch.setattr("src.backend.memory.DB_PATH", str(db_path))
     init_db()
     
     # Create test CSV
@@ -57,6 +58,7 @@ def test_inline_chart(tmp_path, monkeypatch):
     # Setup test DB
     db_path = tmp_path / "test_memory.db"
     monkeypatch.setattr("src.backend.config.DB_PATH", str(db_path))
+    monkeypatch.setattr("src.backend.memory.DB_PATH", str(db_path))
     init_db()
     
     # Create test CSV
