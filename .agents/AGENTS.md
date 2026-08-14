@@ -26,3 +26,8 @@ Every time you make code changes, complete a task, or when the user communicates
 - **Sync Features & Architecture:** If the user introduces a new feature, changes a requirement, or alters the architecture, you must immediately update `docs/FEATURES.md` and/or `docs/ARCHITECTURE.md` to reflect the new state.
 
 **Do not wait for the user to ask you to update the docs. It is your responsibility to keep them continuously synced as a living record.**
+
+## 3. Scope and Unrelated Bugs
+
+When working on a specific branch or feature, if you hit an unrelated bug mid-branch (even if it is small or blocking your tests), **flag it and ask the user before fixing it**. 
+Do not fold unrelated fixes into your current branch and explain them after the fact. Maintain strict scope discipline.
