@@ -199,7 +199,8 @@ async def chat_history_endpoint():
         msg = {
             "id": row["id"],
             "role": row["role"],
-            "content": row["content"]
+            "content": row["content"],
+            "isAutoSummary": bool(row.get("is_auto_summary", 0))
         }
         if row["tool_proposal_json"]:
             proposal = json.loads(row["tool_proposal_json"])
@@ -210,6 +211,25 @@ async def chat_history_endpoint():
         formatted.append(msg)
         
     return {"history": formatted}
+
+@app.get("/api/watch-summaries/pending")
+async def pending_watch_summaries_endpoint():
+    """Returns undelivered watch rule summaries."""
+    from src.backend.memory import get_pending_auto_summaries
+    return {"summaries": get_pending_auto_summaries()}
+
+class AckSummariesRequest(BaseModel):
+    summary_ids: List[int]
+
+@app.post("/api/watch-summaries/ack")
+async def ack_watch_summaries_endpoint(request: AckSummariesRequest):
+    """Marks summaries as delivered and saves them to chat history."""
+    from src.backend.memory import ack_auto_summaries
+    try:
+        ack_auto_summaries(request.summary_ids)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/audit/export")
 async def audit_export_endpoint(

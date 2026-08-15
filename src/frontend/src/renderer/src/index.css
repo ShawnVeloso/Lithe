@@ -511,6 +511,10 @@ body {
   color: var(--text-dim);
 }
 
+.message-prefix--auto-summary {
+  color: var(--color-violet-400);
+}
+
 .message-text {
   flex: 1;
   word-break: break-word;
