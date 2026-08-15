@@ -35,6 +35,8 @@ export interface LitheAPI {
   getUndoHistory: () => Promise<{history: Array<{id: number, tool_name: string, details_json: string, reversible: boolean, timestamp: number}>}>
   undoAction: (actionId: number) => Promise<{status: string}>
   getChatHistory: () => Promise<{history: Array<any>}>
+  getPendingSummaries: () => Promise<{summaries: Array<{id: number, file_path: string, summary: string}>}>
+  ackSummaries: (summaryIds: number[]) => Promise<{status: string}>
   submitApiKey: (apiKey: string) => Promise<void>
   logError: (message: string, stack: string) => Promise<void>
   openLogsFolder: () => Promise<void>

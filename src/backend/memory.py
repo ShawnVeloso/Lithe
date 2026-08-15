@@ -79,7 +79,8 @@ def init_db() -> None:
                 content TEXT NOT NULL,
                 tool_proposal_json TEXT,
                 tool_resolution TEXT,
-                timestamp REAL NOT NULL
+                timestamp REAL NOT NULL,
+                is_auto_summary BOOLEAN DEFAULT 0
             )
             """
         )
@@ -97,6 +98,8 @@ def init_db() -> None:
         ]
         if "conversation_id" not in existing_msg_cols:
             cursor.execute("ALTER TABLE messages ADD COLUMN conversation_id TEXT DEFAULT 'default'")
+        if "is_auto_summary" not in existing_msg_cols:
+            cursor.execute("ALTER TABLE messages ADD COLUMN is_auto_summary BOOLEAN DEFAULT 0")
 
         # --- Migration: add audit columns to action_history ---
         existing_ah_cols = [
@@ -396,19 +399,19 @@ def get_latest_conversation_id() -> str | None:
         row = cursor.fetchone()
         return row["conversation_id"] if row else None
 
-def save_message(msg_id: str, conversation_id: str, role: str, content: str, tool_proposal_json: str = None, tool_resolution: str = None) -> None:
+def save_message(msg_id: str, conversation_id: str, role: str, content: str, tool_proposal_json: str = None, tool_resolution: str = None, is_auto_summary: bool = False) -> None:
     """Saves a message to the chat history."""
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO messages (id, conversation_id, role, content, tool_proposal_json, tool_resolution, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO messages (id, conversation_id, role, content, tool_proposal_json, tool_resolution, timestamp, is_auto_summary)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 content=excluded.content,
                 tool_proposal_json=excluded.tool_proposal_json,
                 tool_resolution=excluded.tool_resolution
             """,
-            (msg_id, conversation_id, role, content, tool_proposal_json, tool_resolution, time.time())
+            (msg_id, conversation_id, role, content, tool_proposal_json, tool_resolution, time.time(), is_auto_summary)
         )
         conn.commit()
 
@@ -416,7 +419,7 @@ def get_chat_history(conversation_id: str) -> List[Dict[str, Any]]:
     """Retrieves the full chat history for a given conversation ordered by timestamp."""
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, role, content, tool_proposal_json, tool_resolution, timestamp FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC", (conversation_id,))
+        cursor.execute("SELECT id, role, content, tool_proposal_json, tool_resolution, timestamp, is_auto_summary FROM messages WHERE conversation_id = ? OR conversation_id = 'system' ORDER BY timestamp ASC", (conversation_id,))
         return [dict(row) for row in cursor.fetchall()]
 
 # ---------------------------------------------------------------------------
@@ -486,3 +489,46 @@ def insert_auto_summary(rule_id: int, file_path: str, summary: str) -> int:
 
 # Ensure DB is initialized when this module is imported
 init_db()
+
+def get_pending_auto_summaries() -> List[Dict[str, Any]]:
+    """Returns all auto summaries where delivered = 0."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM auto_summaries WHERE delivered = 0 ORDER BY created_at ASC")
+        return [dict(row) for row in cursor.fetchall()]
+
+def ack_auto_summaries(summary_ids: List[int]) -> None:
+    """Marks auto summaries as delivered and inserts them into the messages table in a single transaction."""
+    if not summary_ids:
+        return
+        
+    with get_connection() as conn:
+        # get_connection() already has autocommit disabled, so we can use BEGIN
+        cursor = conn.cursor()
+        try:
+            cursor.execute("BEGIN TRANSACTION")
+            
+            for sid in summary_ids:
+                cursor.execute("SELECT file_path, summary FROM auto_summaries WHERE id = ?", (sid,))
+                row = cursor.fetchone()
+                if not row:
+                    continue
+                
+                cursor.execute("UPDATE auto_summaries SET delivered = 1 WHERE id = ?", (sid,))
+                
+                msg_id = f"auto-summary-{sid}"
+                content = f"**[Watch Rule Auto-Summary]** {row['file_path']}\\n\\n{row['summary']}"
+                
+                cursor.execute(
+                    """
+                    INSERT INTO messages (id, conversation_id, role, content, timestamp, is_auto_summary)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO NOTHING
+                    """,
+                    (msg_id, 'system', 'assistant', content, time.time(), 1)
+                )
+                
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise

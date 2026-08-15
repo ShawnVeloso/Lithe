@@ -27,6 +27,8 @@ export interface Message {
   }
   tool_resolution?: 'accepted' | 'rejected'
   chart_data_uri?: string
+  isAutoSummary?: boolean
+  autoSummaryId?: number
 }
 
 // Safeword constant (matches backend: prompts/system_prompt.py)
@@ -56,18 +58,68 @@ function App(): JSX.Element {
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
+    ws.onopen = async () => {
+      try {
+        const pending = await window.litheAPI.getPendingSummaries()
+        if (pending.summaries && pending.summaries.length > 0) {
+          const ackIds: number[] = []
+          setMessages(prev => {
+            const newMessages = [...prev]
+            for (const row of pending.summaries) {
+              if (!newMessages.some(m => m.autoSummaryId === row.id)) {
+                newMessages.push({
+                   id: `auto-summary-${row.id}`,
+                   role: 'assistant',
+                   content: `**[Watch Rule Auto-Summary]** ${row.file_path}\n\n${row.summary}`,
+                   isAutoSummary: true,
+                   autoSummaryId: row.id
+                })
+              }
+              ackIds.push(row.id)
+            }
+            return newMessages
+          })
+          if (ackIds.length > 0) {
+             window.litheAPI.ackSummaries(ackIds)
+          }
+        }
+      } catch (e) {
+         console.error('Failed to fetch pending summaries', e)
+      }
+    }
+
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
         if (data.events && Array.isArray(data.events)) {
-          const newEvents = data.events as LogEvent[]
-          setLogs((prev) => {
-            const newLogs = [...prev, ...newEvents]
-            if (newLogs.length > 1000) return newLogs.slice(-1000)
-            return newLogs
-          })
-          if (newEvents.length > 0) {
-            setLastEventTime(newEvents[newEvents.length - 1].timestamp)
+          const newEvents = data.events as any[]
+          const logEvents: LogEvent[] = []
+          
+          for (const ev of newEvents) {
+             if (ev.type === 'auto_summary') {
+                 window.litheAPI.ackSummaries([ev.id])
+                 setMessages(prev => {
+                     if (prev.some(m => m.autoSummaryId === ev.id)) return prev
+                     return [...prev, {
+                         id: `auto-summary-${ev.id}`,
+                         role: 'assistant',
+                         content: `**[Watch Rule Auto-Summary]** ${ev.path}\n\n${ev.summary}`,
+                         isAutoSummary: true,
+                         autoSummaryId: ev.id
+                     }]
+                 })
+             } else {
+                 logEvents.push(ev as LogEvent)
+             }
+          }
+          
+          if (logEvents.length > 0) {
+            setLogs((prev) => {
+              const newLogs = [...prev, ...logEvents]
+              if (newLogs.length > 1000) return newLogs.slice(-1000)
+              return newLogs
+            })
+            setLastEventTime(logEvents[logEvents.length - 1].timestamp)
           }
         }
       } catch (err) {
@@ -96,7 +148,14 @@ function App(): JSX.Element {
         if (healthy.status && messages.length === 0) {
             const history = await window.litheAPI.getChatHistory()
             if (history.history && history.history.length > 0) {
-                setMessages(history.history)
+                const mappedHistory = history.history.map((msg: any) => {
+                   let autoSummaryId
+                   if (msg.isAutoSummary && msg.id.startsWith('auto-summary-')) {
+                       autoSummaryId = parseInt(msg.id.split('-')[2], 10)
+                   }
+                   return { ...msg, autoSummaryId }
+                })
+                setMessages(mappedHistory)
             }
         }
       } catch {

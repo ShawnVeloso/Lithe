@@ -278,3 +278,38 @@ def test_summarize_file_for_watch_rule_failure_handling(isolated_db, tmp_path):
                 err_row = c.fetchone()
                 assert err_row is not None, "Should log to action_history on failure"
                 assert "error: Failed to generate summary" in err_row["execution_result"]
+
+def test_pending_and_ack_endpoints(isolated_db, tmp_path):
+    """Confirm pending summaries can be fetched and acked."""
+    from src.backend.memory import insert_watch_rule, insert_auto_summary, get_connection
+    import time
+    import os
+    
+    rule_dir = str(tmp_path)
+    rule_id = insert_watch_rule(rule_dir, "*.txt", "summarize")
+    
+    # Insert two summaries
+    sid1 = insert_auto_summary(rule_id, os.path.join(rule_dir, "file1.txt"), "Summary 1")
+    sid2 = insert_auto_summary(rule_id, os.path.join(rule_dir, "file2.txt"), "Summary 2")
+    
+    # Test GET /api/watch-summaries/pending via memory function directly
+    from src.backend.memory import get_pending_auto_summaries, ack_auto_summaries, get_chat_history
+    
+    pending = get_pending_auto_summaries()
+    assert len(pending) == 2
+    assert pending[0]["id"] == sid1
+    assert pending[1]["id"] == sid2
+    
+    # Test ACK
+    ack_auto_summaries([sid1])
+    
+    pending_after_ack = get_pending_auto_summaries()
+    assert len(pending_after_ack) == 1
+    assert pending_after_ack[0]["id"] == sid2
+    
+    # Verify sid1 is now in chat history under 'system'
+    history = get_chat_history('system')
+    assert len(history) == 1
+    assert history[0]["id"] == f"auto-summary-{sid1}"
+    assert history[0]["is_auto_summary"] == 1
+    assert "Summary 1" in history[0]["content"]

@@ -34,6 +34,8 @@
 | U-10 | Audit Log Export | Tier 3 | ✅ Complete |
 | U-11 | Data Science Tools (`profile_data`, `inline_chart`) | Tier 3 | ✅ Complete |
 | U-12 | Watch-and-Summarize Rules (Segment 1: Storage) | Tier 3 | ✅ Complete |
+| U-13 | Watch-and-Summarize Trigger (Segment 2: Logic) | Tier 3 | ✅ Complete |
+| U-14 | Watch-and-Summarize UI Delivery (Segment 3) | Tier 3 | ✅ Complete |
 
 ---
 
@@ -205,3 +207,13 @@
 - [x] **Background Dispatch:** Matching files trigger `summarize_file_for_watch_rule` on a background thread wrapped in `_run_with_timeout` (30s) to prevent blocking the watcher's event loop.
 - [x] **Summarization Logic:** Created `summarize_file_for_watch_rule` in `brain.py`. Reuses `profile_data` logic for `.csv`/`.xlsx` and `read_file_securely` for text files. Uses Gemini with Ollama fallback, and skips unsupported binary files gracefully.
 - [x] **Auditing:** All summary generations (and failures) are recorded in `action_history` via `record_action`.
+
+## U-14 — Watch-and-Summarize UI Delivery (Tier 3, Segment 3: Chat Integration)
+**Rationale:** The user needs to see the generated summaries in their chat window, whether they were actively using the app when the file was dropped (live broadcast) or they just opened the app (catch-up pending fetch).
+**Implementation:**
+- [x] **Endpoints:** Added `GET /api/watch-summaries/pending` and `POST /api/watch-summaries/ack` (transactional).
+- [x] **Live Broadcasting:** Updated `brain.py` and `broadcaster.py` to push an `auto_summary` event via the existing WebSocket.
+- [x] **Frontend Startup:** Added logic in `App.tsx` (on WebSocket `onopen`) to fetch pending summaries, merge/deduplicate them into the chat state, and immediately acknowledge them.
+- [x] **Deduplication:** Frontend deduplicates by `autoSummaryId` to handle overlap between pending fetches and live broadcasts.
+- [x] **UI Rendering:** Summaries are injected as assistant messages with a custom `watch>` prefix and violet text color via `MessageBubble.tsx` and `index.css`.
+- [x] **System Chat Context:** Acknowledged summaries are saved into the `messages` table under a `system` conversation ID to preserve them in chat history across sessions.
