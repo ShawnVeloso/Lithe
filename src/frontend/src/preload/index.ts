@@ -211,6 +211,26 @@ contextBridge.exposeInMainWorld('litheAPI', {
     return await response.json()
   },
 
+  getPendingSummaries: async () => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/watch-summaries/pending`)
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    return await response.json()
+  },
+
+  ackSummaries: async (summaryIds: number[]) => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/watch-summaries/ack`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary_ids: summaryIds })
+    })
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    return await response.json()
+  },
+
   /**
    * Submit the API key for onboarding.
    */

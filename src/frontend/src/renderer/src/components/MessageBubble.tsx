@@ -15,8 +15,13 @@ import ToolProposalCard from './ToolProposalCard'
 // ---------------------------------------------------------------------------
 function MessageBubble({ message, onToolResponse }: MessageBubbleProps): JSX.Element {
   const isUser = message.role === 'user'
-  const prefix = isUser ? 'user>' : 'lithe>'
-  const prefixClass = isUser ? 'message-prefix--user' : 'message-prefix--assistant'
+  let prefix = isUser ? 'user>' : 'lithe>'
+  let prefixClass = isUser ? 'message-prefix--user' : 'message-prefix--assistant'
+
+  if (message.isAutoSummary) {
+    prefix = 'watch>'
+    prefixClass = 'message-prefix--auto-summary'
+  }
 
   return (
     <div className="message-row" id={`msg-${message.id}`}>

@@ -1278,7 +1278,9 @@ def summarize_file_for_watch_rule(file_path: str, rule_id: int) -> str:
             )
             return error_msg
             
-        insert_auto_summary(rule_id, file_path, summary)
+        summary_id = insert_auto_summary(rule_id, file_path, summary)
+        from src.backend.broadcaster import broadcast_event
+        broadcast_event("auto_summary", path=file_path, id=summary_id, summary=summary, rule_id=rule_id)
         record_action(
             "watch_rule_summary",
             json.dumps({"file_path": file_path, "rule_id": rule_id}),
