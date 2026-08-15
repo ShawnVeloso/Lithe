@@ -50,6 +50,8 @@ Before you consider a task complete, verify:
   `fix: resolve NameError in /api/status endpoint`.
 * **Test before merging.** Confirm the app launches and the specific feature/fix
   works before merging the branch into `main`.
+* **Log entries still apply.** Updating `docs/agent-logs/INDEX.md` per §2 is required
+  regardless of branch/PR status — it's a separate, parallel record.
 * **Open a PR, even solo.** Push the branch, open a pull request into `main` with a
   short description of what changed and why. This creates a review checkpoint and a
   searchable history, even with a single reviewer (you).
@@ -60,5 +62,3 @@ Before you consider a task complete, verify:
 * **Never commit secrets.** `.env`, API keys, and the SQLite DB must stay gitignored.
   If a secret is ever accidentally committed and pushed, treat it as compromised —
   rotate it immediately, don't just delete the commit.
-* **Log entries still apply.** Updating `docs/agent-logs/INDEX.md` per §2 is required
-  regardless of branch/PR status — it's a separate, parallel record.
