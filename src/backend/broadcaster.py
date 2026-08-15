@@ -17,14 +17,15 @@ _history_buffer: deque = deque(maxlen=MAX_HISTORY)
 # List of active queues for connected WebSocket clients
 _subscribers: List[asyncio.Queue] = []
 
-def broadcast_event(event_type: str, path: str):
+def broadcast_event(event_type: str, path: str, **kwargs):
     """
     Called from synchronous threads (watcher or indexer) to push a new event.
     """
     event = {
         "type": event_type,
         "path": path,
-        "timestamp": time.time()
+        "timestamp": time.time(),
+        **kwargs
     }
     
     _history_buffer.append(event)
