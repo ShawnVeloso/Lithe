@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, Tray, Menu, globalShortcut, nativeImage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, ChildProcess } from 'child_process'
@@ -68,6 +68,7 @@ const PYTHON_SERVER_PORT = 8321
 const PYTHON_SERVER_URL = `http://127.0.0.1:${PYTHON_SERVER_PORT}`
 
 let pythonProcess: ChildProcess | null = null
+let tray: Tray | null = null
 
 /**
  * Resolves the path to the Python backend executable or script.
@@ -146,6 +147,44 @@ async function waitForPythonServer(maxRetries = 30, delayMs = 500): Promise<bool
 }
 
 // ---------------------------------------------------------------------------
+// Show / focus helper (shared by tray left-click and global hotkey)
+// ---------------------------------------------------------------------------
+function showAndFocusWindow(): void {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+// ---------------------------------------------------------------------------
+// System tray (Windows-only)
+// ---------------------------------------------------------------------------
+function createTray(iconPath: string): void {
+  const icon = nativeImage.createFromPath(iconPath)
+  tray = new Tray(icon)
+  tray.setToolTip('Lithe')
+
+  // Left-click: show and focus the main window
+  tray.on('click', () => {
+    showAndFocusWindow()
+  })
+
+  // Right-click: context menu
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show Lithe',
+      click: () => showAndFocusWindow()
+    },
+    {
+      label: 'Quit',
+      click: () => app.quit()
+    }
+  ])
+  tray.setContextMenu(contextMenu)
+}
+
+// ---------------------------------------------------------------------------
 // Window creation
 // ---------------------------------------------------------------------------
 function createWindow(): BrowserWindow {
@@ -181,6 +220,11 @@ function createWindow(): BrowserWindow {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+
+    // Create system tray after the window is visible
+    if (!tray) {
+      createTray(iconPath)
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -244,6 +288,11 @@ app.whenReady().then(async () => {
 
   createWindow()
 
+  // Register global hotkey: Ctrl+Shift+L → show and focus window
+  globalShortcut.register('Ctrl+Shift+L', () => {
+    showAndFocusWindow()
+  })
+
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -257,6 +306,11 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+  if (tray) {
+    tray.destroy()
+    tray = null
+  }
   stopPythonServer()
 })
 

@@ -36,6 +36,7 @@
 | U-12 | Watch-and-Summarize Rules (Segment 1: Storage) | Tier 3 | ✅ Complete |
 | U-13 | Watch-and-Summarize Trigger (Segment 2: Logic) | Tier 3 | ✅ Complete |
 | U-14 | Watch-and-Summarize UI Delivery (Segment 3) | Tier 3 | ✅ Complete |
+| U-15 | System Tray & Global Hotkey (Windows-only) | Tier 3 | ✅ Complete |
 
 ---
 
@@ -217,3 +218,13 @@
 - [x] **Deduplication:** Frontend deduplicates by `autoSummaryId` to handle overlap between pending fetches and live broadcasts.
 - [x] **UI Rendering:** Summaries are injected as assistant messages with a custom `watch>` prefix and violet text color via `MessageBubble.tsx` and `index.css`.
 - [x] **System Chat Context:** Acknowledged summaries are saved into the `messages` table under a `system` conversation ID to preserve them in chat history across sessions.
+
+## U-15 — System Tray & Global Hotkey (Tier 3, Windows-only)
+**Rationale:** Power users need a fast, keyboard-driven way to summon Lithe from any workspace. A system tray icon provides ambient presence, and a global hotkey (`Ctrl+Shift+L`) allows instant access without alt-tabbing.
+**Implementation:**
+- [x] **System Tray Icon:** `Tray` instance created in `main/index.ts` using the existing `icon.ico`. Created after the main window's `ready-to-show` event, destroyed on `will-quit`.
+- [x] **Left-Click Behavior:** Clicking the tray icon restores a minimized/hidden window and focuses it via a shared `showAndFocusWindow()` helper.
+- [x] **Right-Click Context Menu:** Two items — "Show Lithe" (same as left-click) and "Quit" (calls `app.quit()`, triggers the same clean shutdown as the X button).
+- [x] **Global Hotkey:** `Ctrl+Shift+L` registered via `globalShortcut.register()` on `app.whenReady()`. Triggers the same `showAndFocusWindow()` helper.
+- [x] **Clean Teardown:** `globalShortcut.unregisterAll()` and `tray.destroy()` called on the `will-quit` event to prevent dangling OS-level registrations.
+- [x] **No Backend Changes:** Python backend, watcher, and all existing IPC/API behavior are untouched.
