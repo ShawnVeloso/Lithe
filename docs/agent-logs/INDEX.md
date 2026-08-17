@@ -1,12 +1,12 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-16T19:26 (PHT)
+> **Last Updated:** 2026-08-17T13:12 (PHT)
 
 ---
 
 ## Current Focus
-- **Working on:** feature/tray-and-hotkey — System tray icon + Ctrl+Shift+L global hotkey (Windows-only)
+- **Working on:** None
 - **Next up:** TBD
 - **Then:** TBD
 - **Blocked on:** nothing
@@ -242,3 +242,4 @@ Lithe is now a fully functional, permissioned local desktop assistant with:
 | 2026-08-15 | Antigravity | **Bugfix:** Prevented failed watch-summaries from saving to DB. Modified `summarize_file_for_watch_rule` in `brain.py` to intercept generation failures and bypass `auto_summaries` insertion while still logging to `action_history`. Added explicit mock failure test to `test_watch_trigger.py`. Branch: `fix/watch-summary-failure-handling`. |
 | 2026-08-15 | Antigravity | **Watch-and-Summarize Segment 3:** Wired auto-summaries into Chat UI. Added `GET /api/watch-summaries/pending` and `POST /api/watch-summaries/ack` endpoints. Updated `broadcaster.py` and `brain.py` to live-broadcast new summaries via WebSocket. Updated `App.tsx` and `preload` to fetch pending summaries on startup, deduplicate live summaries, immediately ACK to DB, and render using a custom `message-prefix--auto-summary` class in `MessageBubble.tsx`. Added `tests/test_watch_trigger.py` pending/ack test. Branch: `feature/watch-summary-delivery`. |
 | 2026-08-16 | Antigravity | **System Tray & Global Hotkey (Windows-only):** Added `Tray` with `icon.ico`, left-click to show/focus, right-click context menu (Show Lithe / Quit). Registered `Ctrl+Shift+L` global shortcut to summon the window. Tray created on `ready-to-show`, destroyed on `will-quit`. Shortcuts unregistered on `will-quit`. No backend changes. Branch: `feature/tray-and-hotkey`. |
+| 2026-08-17 | Antigravity | **Branch Cleanup:** Synced `main`, merged unpushed `CHANGELOG.md` commit from `feature/tray-and-hotkey`, and deleted obsolete `feature/tray-and-hotkey` and `feature/watch-summary-delivery` branches locally and on origin. |
