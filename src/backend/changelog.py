@@ -24,15 +24,16 @@ def generate_changelog():
         table_text = table_match.group(1).strip()
         lines = table_text.split("\n")
         
-        # Parse table rows (skip header and separator)
+        # Parse table rows (skip non-data rows)
         entries = []
-        for line in lines[2:]:
+        for line in lines:
             if line.startswith("|"):
                 parts = [p.strip() for p in line.split("|")]
                 if len(parts) >= 4:
                     date = parts[1]
                     action = parts[3]
-                    entries.append((date, action))
+                    if date and date != "Date" and not date.startswith("-"):
+                        entries.append((date, action))
 
         # Group by date
         grouped = {}
@@ -42,7 +43,10 @@ def generate_changelog():
             grouped[date].append(action)
 
         # Generate CHANGELOG.md content
-        changelog_lines = ["# Changelog\n", "Auto-generated from `docs/agent-logs/INDEX.md`.\n"]
+        changelog_lines = [
+            "# Changelog\n",
+            "> Full historical changelog archived in [`docs/ARCHIVE_LOGS.md`](file:///d:/Lithe/docs/ARCHIVE_LOGS.md). Auto-generated recent entries from [`docs/agent-logs/INDEX.md`](file:///d:/Lithe/docs/agent-logs/INDEX.md).\n"
+        ]
         
         # Sort dates descending
         for date in sorted(grouped.keys(), reverse=True):

@@ -26,6 +26,13 @@ from src.backend.brain import summarize_file_for_watch_rule
 from src.backend.tools import _run_with_timeout
 import fnmatch
 
+# --- Test / temp artefacts that must never trigger a watch or index event ---
+# (pytest scratch dirs, unit-test trees, editor temp files). ".pytest_cache" is
+# already covered by the generic dotfile rule in _is_excluded.
+_EXCLUDED_DIR_NAMES = {"tests", "test"}
+_EXCLUDED_DIR_GLOBS = ("pytest-*",)
+_EXCLUDED_FILE_GLOBS = ("*.tmp", "*.temp", "*.e2e.*")
+
 # Module-level state
 last_event_time: float | None = None
 _observer: Observer | None = None
@@ -73,15 +80,22 @@ class _LitheEventHandler(FileSystemEventHandler):
 
     def _is_excluded(self, path: str) -> bool:
         """Check if the file resides inside an excluded directory or has an excluded extension."""
+        name = os.path.basename(path)
+        if any(fnmatch.fnmatch(name, g) for g in _EXCLUDED_FILE_GLOBS):
+            return True
+
         _, ext = os.path.splitext(path)
         if ext and ext.lower() in EXCLUDED_EXTENSIONS:
             return True
 
-        parent_parts = Path(path).parent.parts
-        return any(
-            part in EXCLUDED_DIRS or (part.startswith(".") and len(part) > 1)
-            for part in parent_parts
-        )
+        for part in Path(path).parent.parts:
+            if part in EXCLUDED_DIRS or part in _EXCLUDED_DIR_NAMES:
+                return True
+            if part.startswith(".") and len(part) > 1:
+                return True
+            if any(fnmatch.fnmatch(part, g) for g in _EXCLUDED_DIR_GLOBS):
+                return True
+        return False
 
     def _schedule(self, action: str, path: str):
         """Debounce an event — wait DEBOUNCE_SECONDS before processing."""

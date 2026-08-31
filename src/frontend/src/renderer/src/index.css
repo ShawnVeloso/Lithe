@@ -1032,3 +1032,124 @@ body {
   border: 1px solid var(--border);
   margin: 8px 0;
 }
+
+/* --- Markdown Rendering (assistant + user message bodies) --- */
+.message-markdown {
+  white-space: normal; /* let block elements flow; <pre> keeps its own */
+}
+
+.message-markdown > :first-child { margin-top: 0; }
+.message-markdown > :last-child { margin-bottom: 0; }
+
+.message-markdown p { margin: 0 0 8px; }
+
+.message-markdown h1,
+.message-markdown h2,
+.message-markdown h3,
+.message-markdown h4,
+.message-markdown h5,
+.message-markdown h6 {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 12px 0 6px;
+}
+
+.message-markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.message-markdown ul,
+.message-markdown ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.message-markdown li { margin: 2px 0; }
+
+.message-markdown blockquote {
+  margin: 0 0 8px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  color: var(--text-dim);
+}
+
+.message-markdown hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+/* Inline code */
+.message-markdown code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 0 3px;
+  color: var(--accent);
+}
+
+/* Code blocks — distinct dark background, flat */
+.message-markdown pre {
+  background: #08080a;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 8px 10px;
+  margin: 0 0 8px;
+  overflow-x: auto;
+}
+
+.message-markdown pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Tables */
+.message-markdown table {
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  font-size: 12px;
+  display: block;
+  overflow-x: auto;
+}
+
+.message-markdown th,
+.message-markdown td {
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  text-align: left;
+}
+
+.message-markdown th {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* highlight.js token colors — amber HUD palette */
+.message-markdown .hljs-comment,
+.message-markdown .hljs-quote { color: var(--text-dim); font-style: italic; }
+.message-markdown .hljs-keyword,
+.message-markdown .hljs-selector-tag,
+.message-markdown .hljs-built_in,
+.message-markdown .hljs-literal { color: var(--accent); }
+.message-markdown .hljs-string,
+.message-markdown .hljs-attr,
+.message-markdown .hljs-template-tag { color: var(--success); }
+.message-markdown .hljs-number,
+.message-markdown .hljs-meta { color: var(--info); }
+.message-markdown .hljs-title,
+.message-markdown .hljs-section,
+.message-markdown .hljs-function .hljs-title { color: var(--special); }
+.message-markdown .hljs-variable,
+.message-markdown .hljs-name,
+.message-markdown .hljs-type { color: var(--text); }
+.message-markdown .hljs-emphasis { font-style: italic; }
+.message-markdown .hljs-strong { font-weight: 600; }
