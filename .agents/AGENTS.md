@@ -31,3 +31,9 @@ Every time you make code changes, complete a task, or when the user communicates
 
 When working on a specific branch or feature, if you hit an unrelated bug mid-branch (even if it is small or blocking your tests), **flag it and ask the user before fixing it**. 
 Do not fold unrelated fixes into your current branch and explain them after the fact. Maintain strict scope discipline.
+
+Pull main before branching. Every new branch starts from a freshly pulled main — never off a stale local copy. This is the #1 cause of silent divergence.
+Code changes first, INDEX.md update last, same commit or the very next one. AG doesn't get to update INDEX.md mid-task and then keep coding — the doc update is the closing move of a task, not a running log.
+INDEX.md updates are part of the feature's diff, not a separate one. One PR = one feature = one INDEX.md log entry, included in that same PR. Never a standalone "docs sync" commit that lands separately from the code it describes.
+Merge to main happens before the next branch starts. No stacking a new branch on top of an unmerged one. If Shawn hasn't reviewed/merged yet, AG waits or works on something explicitly unrelated — it does not start a second parallel branch that will also need to touch INDEX.md.
+On merge conflict in INDEX.md specifically: the log table entries always get appended, never overwritten — if git shows a conflict there, that's a signal something violated rule 4, not something to resolve by picking one side.
