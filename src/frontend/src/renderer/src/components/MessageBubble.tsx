@@ -1,4 +1,7 @@
 import type { Message } from '../App'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -36,10 +39,12 @@ function MessageBubble({ message, onToolResponse }: MessageBubbleProps): JSX.Ele
         ) : message.chart_data_uri ? (
           <img src={message.chart_data_uri} alt={message.content || 'Chart'} className="message-chart" />
         ) : (
-          <span className="message-text">
-            {message.content}
+          <div className="message-text message-markdown">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+              {message.content}
+            </ReactMarkdown>
             {message.isStreaming && <span className="streaming-cursor" />}
-          </span>
+          </div>
         )}
       </div>
     </div>

@@ -225,8 +225,9 @@ class AckSummariesRequest(BaseModel):
 async def ack_watch_summaries_endpoint(request: AckSummariesRequest):
     """Marks summaries as delivered and saves them to chat history."""
     from src.backend.memory import ack_auto_summaries
+    import src.backend.brain as brain
     try:
-        ack_auto_summaries(request.summary_ids)
+        ack_auto_summaries(request.summary_ids, brain._current_conversation_id or "system")
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

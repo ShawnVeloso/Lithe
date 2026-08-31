@@ -313,3 +313,36 @@ def test_pending_and_ack_endpoints(isolated_db, tmp_path):
     assert history[0]["id"] == f"auto-summary-{sid1}"
     assert history[0]["is_auto_summary"] == 1
     assert "Summary 1" in history[0]["content"]
+
+def test_ack_buries_summary_even_if_chat_binding_fails(isolated_db, tmp_path):
+    """delivered = 1 must survive a failure while writing the chat message."""
+    from src.backend.memory import (
+        insert_watch_rule, insert_auto_summary, ack_auto_summaries,
+        get_pending_auto_summaries, get_chat_history,
+    )
+
+    rule_id = insert_watch_rule(str(tmp_path), "*.txt", "summarize")
+    sid = insert_auto_summary(rule_id, str(tmp_path / "a.txt"), "Summary A")
+
+    # time.time() is only reached in phase 2, so this fails the chat binding
+    # after the burial has already been committed.
+    with patch("src.backend.memory.time.time", side_effect=RuntimeError("chat binding failed")):
+        with pytest.raises(RuntimeError):
+            ack_auto_summaries([sid], "conv-1")
+
+    assert get_pending_auto_summaries() == [], "burial must survive a chat-binding failure"
+    assert get_chat_history("conv-1") == []
+
+def test_init_db_purges_undeliverable_summaries(isolated_db, tmp_path):
+    """Legacy junk summaries are purged; a real pending summary survives."""
+    from src.backend import memory
+
+    rule_id = memory.insert_watch_rule(str(tmp_path), "*.txt", "summarize")
+    keep = memory.insert_auto_summary(rule_id, "a.txt", "Real summary. The log had Error: not found.")
+    memory.insert_auto_summary(rule_id, "b.txt", "Failed to generate summary.")
+    memory.insert_auto_summary(rule_id, "c.txt", "Error: Ollama returned an empty response.")
+    memory.insert_auto_summary(999, "d.txt", "Mock summary.")  # orphan — no such rule
+
+    memory.init_db()
+
+    assert [r["id"] for r in memory.get_pending_auto_summaries()] == [keep]

@@ -110,6 +110,16 @@ def init_db() -> None:
             cursor.execute("ALTER TABLE action_history ADD COLUMN execution_result TEXT DEFAULT ''")
             cursor.execute("ALTER TABLE action_history ADD COLUMN conversation_id TEXT DEFAULT ''")
 
+        # --- Persistent key/value app state (e.g. active conversation pointer) ---
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+            """
+        )
+
         # --- Watch-and-Summarize (Segment 1): Watch Rules ---
         cursor.execute(
             """
@@ -139,6 +149,27 @@ def init_db() -> None:
                 delivered BOOLEAN NOT NULL DEFAULT 0,
                 FOREIGN KEY(rule_id) REFERENCES watch_rules(id)
             )
+            """
+        )
+
+        # --- Purge undeliverable auto-summaries ---
+        # Legacy rows written before the watcher's test-artefact filter and the
+        # error-string guard in summarize_file_for_watch_rule existed. Left with
+        # delivered = 0 they are re-fetched as "pending" on every restart.
+        # Each clause is anchored so it cannot match a legitimate summary:
+        #   - the exact string the old failure path stored, not a substring
+        #     (a real summary may well contain "failed to generate");
+        #   - the "Error: " prefix every _ollama_chat failure string carries,
+        #     anchored so a summary merely mentioning an error survives;
+        #   - orphans, whose parent rule no longer exists — rules are only ever
+        #     soft-deleted, so a real summary always has its watch_rules row.
+        cursor.execute(
+            """
+            DELETE FROM auto_summaries
+             WHERE delivered = 0
+               AND (summary = 'Failed to generate summary.'
+                 OR summary LIKE 'Error: %'
+                 OR rule_id NOT IN (SELECT id FROM watch_rules))
             """
         )
 
@@ -419,8 +450,26 @@ def get_chat_history(conversation_id: str) -> List[Dict[str, Any]]:
     """Retrieves the full chat history for a given conversation ordered by timestamp."""
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, role, content, tool_proposal_json, tool_resolution, timestamp, is_auto_summary FROM messages WHERE conversation_id = ? OR conversation_id = 'system' ORDER BY timestamp ASC", (conversation_id,))
+        cursor.execute("SELECT id, role, content, tool_proposal_json, tool_resolution, timestamp, is_auto_summary FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC", (conversation_id,))
         return [dict(row) for row in cursor.fetchall()]
+
+
+def get_app_state(key: str) -> str | None:
+    """Reads a persisted app-state value, or None if unset."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT value FROM app_state WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+
+def set_app_state(key: str, value: str) -> None:
+    """Persists an app-state value (upsert)."""
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO app_state (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        conn.commit()
 
 # ---------------------------------------------------------------------------
 # Watch-and-Summarize: Watch Rules CRUD
@@ -497,38 +546,48 @@ def get_pending_auto_summaries() -> List[Dict[str, Any]]:
         cursor.execute("SELECT * FROM auto_summaries WHERE delivered = 0 ORDER BY created_at ASC")
         return [dict(row) for row in cursor.fetchall()]
 
-def ack_auto_summaries(summary_ids: List[int]) -> None:
-    """Marks auto summaries as delivered and inserts them into the messages table in a single transaction."""
+def ack_auto_summaries(summary_ids: List[int], conversation_id: str = "system") -> None:
+    """Marks auto summaries as delivered and inserts them into the messages table in a single transaction.
+
+    ``conversation_id`` binds the delivered summary to the chat it appeared in so it
+    reloads with that conversation on restart (and does not leak into new chats).
+    """
     if not summary_ids:
         return
-        
+
+    conversation_id = conversation_id or "system"
+    placeholders = ",".join("?" * len(summary_ids))
+
     with get_connection() as conn:
-        # get_connection() already has autocommit disabled, so we can use BEGIN
         cursor = conn.cursor()
-        try:
-            cursor.execute("BEGIN TRANSACTION")
-            
-            for sid in summary_ids:
-                cursor.execute("SELECT file_path, summary FROM auto_summaries WHERE id = ?", (sid,))
-                row = cursor.fetchone()
-                if not row:
-                    continue
-                
-                cursor.execute("UPDATE auto_summaries SET delivered = 1 WHERE id = ?", (sid,))
-                
-                msg_id = f"auto-summary-{sid}"
-                content = f"**[Watch Rule Auto-Summary]** {row['file_path']}\\n\\n{row['summary']}"
-                
-                cursor.execute(
-                    """
-                    INSERT INTO messages (id, conversation_id, role, content, timestamp, is_auto_summary)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO NOTHING
-                    """,
-                    (msg_id, 'system', 'assistant', content, time.time(), 1)
-                )
-                
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
+
+        # Phase 1 — bury, and commit immediately. Burial must not share a
+        # transaction with the chat binding below: when the two were atomic, any
+        # failure while writing the message rolled the UPDATE back too, and the
+        # summaries returned as pending on every restart.
+        cursor.execute(
+            f"UPDATE auto_summaries SET delivered = 1 WHERE id IN ({placeholders})",
+            summary_ids,
+        )
+        conn.commit()
+
+        # Phase 2 — bind each summary to the conversation it was shown in.
+        for sid in summary_ids:
+            cursor.execute("SELECT file_path, summary FROM auto_summaries WHERE id = ?", (sid,))
+            row = cursor.fetchone()
+            if not row:
+                continue
+
+            msg_id = f"auto-summary-{sid}"
+            content = f"**[Watch Rule Auto-Summary]** {row['file_path']}\n\n{row['summary']}"
+
+            cursor.execute(
+                """
+                INSERT INTO messages (id, conversation_id, role, content, timestamp, is_auto_summary)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO NOTHING
+                """,
+                (msg_id, conversation_id, 'assistant', content, time.time(), 1)
+            )
+
+        conn.commit()

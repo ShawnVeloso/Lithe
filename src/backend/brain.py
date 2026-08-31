@@ -68,17 +68,20 @@ except Exception as e:
 # --- Feature 4 (Tier 2): Persistent Chat History ---
 import uuid
 import json
-from src.backend.memory import save_message, get_chat_history, get_latest_conversation_id
+from src.backend.memory import save_message, get_chat_history, get_latest_conversation_id, get_app_state, set_app_state
 
 def _load_history():
     global _chat_history
     global _current_conversation_id
-    
+
     _chat_history.clear()
-    
-    _current_conversation_id = get_latest_conversation_id()
+
+    # Prefer the explicit active-conversation pointer (set by new_conversation);
+    # fall back to the latest message's conversation for pre-existing databases.
+    _current_conversation_id = get_app_state("active_conversation_id") or get_latest_conversation_id()
     if not _current_conversation_id:
         _current_conversation_id = str(uuid.uuid4())
+        set_app_state("active_conversation_id", _current_conversation_id)
         return
 
     for row in get_chat_history(_current_conversation_id):
@@ -101,6 +104,7 @@ def new_conversation() -> str:
     global _current_conversation_id
     _chat_history.clear()
     _current_conversation_id = str(uuid.uuid4())
+    set_app_state("active_conversation_id", _current_conversation_id)
     return _current_conversation_id
 
 def _save_content(content_obj: types.Content):
@@ -1266,8 +1270,12 @@ def summarize_file_for_watch_rule(file_path: str, rule_id: int) -> str:
             response = _ollama_chat(CANDID_SYSTEM_PROMPT, prompt)
             summary = response if isinstance(response, str) else response.get('text', str(response))
             
-        if not summary:
-            error_msg = "Failed to generate summary."
+        # A failed/empty summary — or an error string bubbled up from the Ollama
+        # fallback — must stay in action_history only. Never broadcast it to the
+        # chat window.
+        summary = (summary or "").strip()
+        if not summary or summary.startswith("Error:"):
+            error_msg = summary or "Failed to generate summary."
             record_action(
                 "watch_rule_summary",
                 json.dumps({"file_path": file_path, "rule_id": rule_id}),
@@ -1277,7 +1285,7 @@ def summarize_file_for_watch_rule(file_path: str, rule_id: int) -> str:
                 conversation_id=""
             )
             return error_msg
-            
+
         summary_id = insert_auto_summary(rule_id, file_path, summary)
         from src.backend.broadcaster import broadcast_event
         broadcast_event("auto_summary", path=file_path, id=summary_id, summary=summary, rule_id=rule_id)

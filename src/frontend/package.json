@@ -25,7 +25,9 @@
       {
         "from": "resources/python-backend",
         "to": "python-backend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "../../docs/lithe-brand/icon.ico",
@@ -36,7 +38,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "../../docs/lithe-brand/icon.ico"
@@ -57,7 +61,10 @@
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",
@@ -70,4 +77,3 @@
     "vite": "^6.3.5"
   }
 }
-
