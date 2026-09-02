@@ -365,6 +365,21 @@ function App(): JSX.Element {
     }
   }
 
+  const handleSwitchConversation = async (conversationId: string): Promise<void> => {
+    try {
+      setIsLoading(true)
+      await window.litheAPI.switchConversation(conversationId)
+      setMessages([])
+      setError(null)
+      const history = await window.litheAPI.getChatHistory()
+      setMessages(history.history || [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to switch conversation.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
 
   // Global Keyboard Shortcuts
@@ -424,6 +439,8 @@ function App(): JSX.Element {
           onSendMessage={handleSendMessage}
           onToolResponse={handleToolResponse}
           onNewChat={handleNewChat}
+          onSwitchConversation={handleSwitchConversation}
+          onActiveConversationDeleted={() => setMessages([])}
           isOnline={isOnline}
         />
       </div>

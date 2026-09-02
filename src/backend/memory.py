@@ -454,6 +454,37 @@ def get_chat_history(conversation_id: str) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_conversations() -> List[Dict[str, Any]]:
+    """Lists every conversation for the history drawer, newest activity first.
+
+    ``title`` is the conversation's first user message, or None for a chat that
+    only ever received auto-summaries.
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT conversation_id,
+                   MAX(timestamp) AS last_at,
+                   (SELECT content FROM messages t
+                     WHERE t.conversation_id = m.conversation_id AND t.role = 'user'
+                     ORDER BY t.timestamp ASC LIMIT 1) AS title
+              FROM messages m
+             GROUP BY conversation_id
+             ORDER BY last_at DESC
+            """
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def delete_conversation(conversation_id: str) -> None:
+    """Permanently removes a conversation's messages and its audit rows."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+        conn.execute("DELETE FROM action_history WHERE conversation_id = ?", (conversation_id,))
+        conn.commit()
+
+
 def get_app_state(key: str) -> str | None:
     """Reads a persisted app-state value, or None if unset."""
     with get_connection() as conn:

@@ -183,17 +183,49 @@ async def tool_response_endpoint(request: ToolResponseRequest):
         return ChatResponse(response="", tool_proposal=result.get("tool_proposal"))
     return ChatResponse(response=result)
 
+@app.get("/api/chat/conversations")
+async def conversations_endpoint():
+    """Lists past conversations (id, last activity, first user message as title)."""
+    from src.backend.memory import get_conversations
+    return {"conversations": get_conversations()}
+
+
+@app.delete("/api/chat/conversations/{conversation_id}")
+async def delete_conversation_endpoint(conversation_id: str):
+    """Deletes a conversation. If it was the active one, start a fresh chat so the
+    backend is never left bound to an id with no messages behind it."""
+    from src.backend.memory import delete_conversation
+    import src.backend.brain as brain
+
+    delete_conversation(conversation_id)
+    was_active = conversation_id == brain._current_conversation_id
+    active_id = brain.new_conversation() if was_active else brain._current_conversation_id
+    return {"status": "success", "was_active": was_active, "conversation_id": active_id}
+
+
+class SwitchChatRequest(BaseModel):
+    conversation_id: str
+
+
+@app.post("/api/chat/switch")
+async def switch_chat_endpoint(request: SwitchChatRequest):
+    """Makes a past conversation active and reloads it into the brain's context."""
+    from src.backend.brain import switch_conversation
+    return {"status": "success", "conversation_id": switch_conversation(request.conversation_id)}
+
+
 @app.get("/api/chat/history")
-async def chat_history_endpoint():
-    """Returns the persistent chat history."""
+async def chat_history_endpoint(conversation_id: str | None = None):
+    """Returns the persistent chat history for a conversation (active one by default)."""
     from src.backend.memory import get_chat_history
-    from src.backend.brain import _current_conversation_id
+    import src.backend.brain as brain
     import json
-    
-    if not _current_conversation_id:
+
+    conversation_id = conversation_id or brain._current_conversation_id
+    if not conversation_id:
         return {"history": []}
-        
-    history = get_chat_history(_current_conversation_id)
+
+    history = get_chat_history(conversation_id)
     formatted = []
     for row in history:
         msg = {
@@ -293,6 +325,44 @@ async def new_chat_endpoint():
     from src.backend.brain import new_conversation
     conversation_id = new_conversation()
     return {"conversation_id": conversation_id}
+
+
+@app.get("/api/config/llm")
+async def get_llm_config():
+    """Current LLM settings. The API key is masked -- the full value never leaves here."""
+    from src.backend import config
+    key = config.GEMINI_API_KEY
+    return {
+        "gemini_api_key_masked": f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "",
+        "ollama_url": config.OLLAMA_URL,
+        "ollama_model": config.OLLAMA_MODEL,
+    }
+
+
+class LLMConfigRequest(BaseModel):
+    api_key: str = ""
+    ollama_url: str = ""
+    ollama_model: str = ""
+
+
+@app.post("/api/config/llm")
+async def set_llm_config(request: LLMConfigRequest):
+    """Persists LLM settings and applies them live -- no restart required."""
+    from src.backend import config
+    import src.backend.brain as brain
+
+    config.update_llm_config(request.api_key, request.ollama_url, request.ollama_model)
+
+    # brain imported OLLAMA_URL/OLLAMA_MODEL by value at import time, so updating
+    # config's globals alone would not reach the running brain. Rebind them here
+    # (and rebuild the client when a new key arrives).
+    brain.OLLAMA_URL = config.OLLAMA_URL
+    brain.OLLAMA_MODEL = config.OLLAMA_MODEL
+    if request.api_key.strip():
+        from google import genai
+        brain._client = genai.Client(api_key=config.GEMINI_API_KEY)
+
+    return await get_llm_config()
 
 
 class SafewordToggleRequest(BaseModel):

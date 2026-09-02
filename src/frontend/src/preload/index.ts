@@ -155,6 +155,26 @@ contextBridge.exposeInMainWorld('litheAPI', {
     }
   },
 
+  getLlmConfig: async () => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/config/llm`)
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    return await response.json()
+  },
+
+  setLlmConfig: async (cfg: {api_key?: string; ollama_url?: string; ollama_model?: string}) => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/config/llm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg)
+    })
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    return await response.json()
+  },
+
   /**
    * Toggles the session-wide safeword override.
    */
@@ -205,6 +225,37 @@ contextBridge.exposeInMainWorld('litheAPI', {
 
   getChatHistory: async () => {
     const response = await fetch(`${PYTHON_SERVER_URL}/api/chat/history`)
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    return await response.json()
+  },
+
+  getConversations: async () => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/chat/conversations`)
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    return await response.json()
+  },
+
+  deleteConversation: async (conversationId: string) => {
+    const response = await fetch(
+      `${PYTHON_SERVER_URL}/api/chat/conversations/${encodeURIComponent(conversationId)}`,
+      { method: 'DELETE' }
+    )
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    return await response.json()
+  },
+
+  switchConversation: async (conversationId: string) => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/chat/switch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversation_id: conversationId })
+    })
     if (!response.ok) {
       throw new Error(`Server error: ${response.status} ${response.statusText}`)
     }

@@ -143,6 +143,7 @@ body {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  position: relative; /* anchors the history drawer */
 }
 
 .panel__label {
@@ -387,6 +388,185 @@ body {
 
 .chat-panel--safeword .panel__header {
   border-bottom-color: var(--special);
+}
+
+/* --- Chat History Drawer --- */
+.chat-header-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.history-drawer {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  z-index: 50;
+}
+
+.history-drawer__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 24px 6px 10px; /* right gutter reserves room for the × */
+  cursor: pointer;
+  position: relative;
+}
+
+.history-drawer__item:last-child {
+  border-bottom: none;
+}
+
+.history-drawer__item:hover {
+  color: var(--accent);
+}
+
+.history-drawer__title {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-drawer__date {
+  display: block;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.history-drawer__empty {
+  padding: 8px 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* --- Chat History Delete Confirmation Card --- */
+.history-confirm-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(8, 8, 10, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  z-index: 60;
+}
+
+.history-confirm-card {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.history-confirm-text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.04em;
+}
+
+.history-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.history-confirm-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all var(--transition-fast);
+}
+
+.history-confirm-btn--cancel {
+  color: var(--text-dim);
+}
+
+.history-confirm-btn--cancel:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.history-confirm-btn--confirm {
+  color: var(--text);
+}
+
+.history-confirm-btn--confirm:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* --- Settings Modal (reuses .command-palette-overlay + .history-confirm-btn) --- */
+.settings-modal {
+  width: 100%;
+  max-width: 420px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-field label {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.settings-field input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 6px;
+  outline: none;
+}
+
+.settings-field input:focus {
+  border-color: var(--accent);
+}
+
+.settings-error {
+  font-size: 10px;
+  color: var(--danger);
 }
 
 /* --- Message Feed --- */

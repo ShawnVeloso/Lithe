@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { StatusResponse } from '../env.d'
 import type { LogEvent } from '../App'
+import SettingsPanel from './SettingsPanel'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -23,6 +24,7 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
   const [autoScroll, setAutoScroll] = useState(true)
 
   const [showExportUI, setShowExportUI] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [exportFormat, setExportFormat] = useState('json')
   const [exportFrom, setExportFrom] = useState('')
   const [exportTo, setExportTo] = useState('')
@@ -272,6 +274,20 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
 
         <span className="system-separator" />
 
+        {/* Settings */}
+        <div className="system-stat">
+          <span
+            className="system-stat__value system-stat__value--accent"
+            style={{ cursor: 'pointer', opacity: 0.8 }}
+            onClick={() => setShowSettings(true)}
+            title="LLM configuration"
+          >
+            [⚙ settings]
+          </span>
+        </div>
+
+        <span className="system-separator" />
+
         {/* View Logs Button */}
         <div className="system-stat">
           <span
@@ -327,6 +343,8 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
         )}
 
       </div>
+
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </div>
   )
 }

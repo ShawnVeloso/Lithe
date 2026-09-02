@@ -107,6 +107,16 @@ def new_conversation() -> str:
     set_app_state("active_conversation_id", _current_conversation_id)
     return _current_conversation_id
 
+def switch_conversation(conversation_id: str) -> str:
+    """Makes an existing conversation active and reloads it into LLM context.
+
+    Writing the pointer first lets _load_history do the rest -- without the reload
+    the model would keep answering from the previous chat's history.
+    """
+    set_app_state("active_conversation_id", conversation_id)
+    _load_history()
+    return _current_conversation_id
+
 def _save_content(content_obj: types.Content):
     try:
         content_text = ""

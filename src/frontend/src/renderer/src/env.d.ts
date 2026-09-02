@@ -31,10 +31,15 @@ export interface LitheAPI {
   addExcludedExtension: (ext: string) => Promise<void>
   removeExcludedExtension: (ext: string) => Promise<void>
   toggleSafeword: (active: boolean) => Promise<void>
+  getLlmConfig: () => Promise<{gemini_api_key_masked: string, ollama_url: string, ollama_model: string}>
+  setLlmConfig: (cfg: {api_key?: string, ollama_url?: string, ollama_model?: string}) => Promise<{gemini_api_key_masked: string, ollama_url: string, ollama_model: string}>
   searchFiles: (query: string) => Promise<{results: Array<{path: string, name: string, extension: string, size_bytes: number, category: string}>}>
   getUndoHistory: () => Promise<{history: Array<{id: number, tool_name: string, details_json: string, reversible: boolean, timestamp: number}>}>
   undoAction: (actionId: number) => Promise<{status: string}>
   getChatHistory: () => Promise<{history: Array<any>}>
+  getConversations: () => Promise<{conversations: Array<{conversation_id: string, last_at: number, title: string | null}>}>
+  switchConversation: (conversationId: string) => Promise<{status: string, conversation_id: string}>
+  deleteConversation: (conversationId: string) => Promise<{status: string, was_active: boolean, conversation_id: string}>
   getPendingSummaries: () => Promise<{summaries: Array<{id: number, file_path: string, summary: string}>}>
   ackSummaries: (summaryIds: number[]) => Promise<{status: string}>
   submitApiKey: (apiKey: string) => Promise<void>
