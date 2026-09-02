@@ -63,3 +63,7 @@ build/
 
 # Pytest cache (regenerated on every run)
 .pytest_cache/
+
+# PyInstaller writes *.spec, but lithe-server.spec is hand-maintained SOURCE —
+# it is the only description of how the backend is packaged. Keep it tracked.
+!lithe-server.spec

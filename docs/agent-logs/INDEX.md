@@ -1,15 +1,21 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-08-31T20:10 (PHT)
+> **Last Updated:** 2026-09-03T01:20 (PHT)
 
 ---
 
 ## Current Focus
-- **Working on:** Markdown rendering fix + ack_auto_summaries newline bugfix
+- **Working on:** nothing — recovery and repackaging complete, `main` synced with origin
 - **Next up:** TBD
 - **Then:** TBD
 - **Blocked on:** nothing
+
+> **Verify before shipping:** the install→upgrade cycle has still never been
+> exercised end-to-end on a real machine. The fix for the "a Lithe process is
+> open" hang is compiled into the current installer (confirmed via the
+> `!include` line in `release/builder-debug.yml`) but has not been observed
+> working against an actual prior install.
 
 ---
 
@@ -23,7 +29,7 @@
 | **F-04** — RAG & File Context | ✅ Complete | Regex extraction, SQLite lookup, context injection |
 | **F-05** — Basic Task Execution | ✅ Complete | LLM Function Calling with dynamic safeword wrappers |
 | **F-06** — Candid Persona & Safeword | ✅ Complete | Dual system prompts, case-insensitive safeword |
-| **F-07** — Desktop Packaging | ✅ Complete | PyInstaller backend + electron-builder NSIS installer |
+| **F-07** — Desktop Packaging | ✅ Complete | PyInstaller backend + electron-builder NSIS installer. `lithe-server.spec` and `src/frontend/build/installer.nsh` are hand-maintained source and are now force-tracked past `.gitignore` — both were previously ignored and unrecoverable. |
 | **UPGRADE Phase 1** — Foundation & Safety | ✅ Complete | SQLite WAL mode, circuit breakers with path validation & timeouts |
 | **UPGRADE Phase 2** — Reliability | ✅ Complete | Ollama fallback with health check, configurable model/URL/timeout |
 | **UPGRADE Phase 3** — Efficiency & Context | ✅ Complete | Real-time file watcher (watchdog), heuristic category tagging |
@@ -65,3 +71,5 @@
 | 2026-08-17 | Antigravity | **Branch Cleanup:** Synced `main`, merged unpushed `CHANGELOG.md` commit from `feature/tray-and-hotkey`, and deleted obsolete `feature/tray-and-hotkey` and `feature/watch-summary-delivery` branches locally and on origin. |
 | 2026-08-31 | Antigravity | **Doc Pruning & Ponytail Ultra:** Archived historical log entries and changelog to `docs/ARCHIVE_LOGS.md`. Pruned INDEX.md to active focus and recent entries. Reduced FEATURES.md to dense checklist. Removed dead task specs. Consolidated playbook rules and architecture specs. |
 | 2026-08-31 | Antigravity | **Bugfix: Literal `\n\n`** in `ack_auto_summaries` (`memory.py:582`). Double-escaped backslashes wrote literal text instead of newlines. **Fix: Markdown rendering** — `MessageBubble.tsx` wrapped `<ReactMarkdown>` in a `<span>`, causing browsers to flatten block-level output (`<p>`, `<pre>`, `<table>`) into raw text. Changed to `<div>`. Branch: `chore/prune-docs-ponytail`. |
+| 2026-09-02 | Claude Opus 5 | **Working-tree recovery.** An interrupted folder move left directories in place but stripped their files, emptying `src/backend/`, `docs/`, `scripts/`, `resources/`, `locales/` and `.git/` itself (271 dirs, 0 files — git was unreadable). Restored `.git` from origin and checked out 239 deleted tracked files. Three features had a surviving frontend but a backend that was never committed, so origin could not restore them; rebuilt `memory.get_conversations`/`delete_conversation`, `brain.switch_conversation`, `config.update_llm_config`, and the `/api/chat/conversations`, `/api/chat/switch` and `/api/config/llm` endpoints, verified against the surviving `tests/test_memory.py` and `env.d.ts` response shapes. Fixed `/api/chat/history` binding `_current_conversation_id` by value at import, so it never saw a switch. Merged the original `package.json` build config back over the Sep-1 reconstruction. Tests 33→36 passing. |
+| 2026-09-03 | Claude Opus 5 | **Backend repackaging.** Reconstructed the lost `lithe-server.spec` (gitignored by `*.spec`, so it was in neither origin nor any transcript) from `server_entry.py` and the shipped bundle. The packaged backend was found to be from Aug 3 — eight days older than `data_tools.py` — so it had never contained pandas/matplotlib at all. Rebuilt: 43MB → 121MB bundle, GUI toolkits excluded since matplotlib is pinned to Agg. Added `openpyxl` as a hidden import because pandas resolves its Excel engine by name at call time, which would have failed `profile_data` on `.xlsx` at runtime. Verified the packaged exe serves the recovered endpoints, then rebuilt the installer (130MB). |
