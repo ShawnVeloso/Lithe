@@ -2,6 +2,12 @@
 
 > Full historical changelog archived in [`docs/ARCHIVE_LOGS.md`](file:///d:/Lithe/docs/ARCHIVE_LOGS.md). Auto-generated recent entries from [`docs/agent-logs/INDEX.md`](file:///d:/Lithe/docs/agent-logs/INDEX.md).
 
+## 2026-09-03
+- **Backend Repackaging:** Reconstructed the missing `lithe-server.spec` and rebuilt the PyInstaller bundle. The shipped backend had been stale since Aug 3 and predated `data_tools.py` entirely, so the packaged app never had pandas/matplotlib. Added `openpyxl` as a hidden import (pandas picks its Excel engine by name at runtime, which static analysis cannot see). Excluded GUI toolkits since matplotlib is pinned to the Agg backend. Rebuilt the NSIS installer with the upgrade-hang fix confirmed compiled in.
+
+## 2026-09-02
+- **Working-Tree Recovery:** An interrupted folder move stripped files while leaving directories, emptying `src/backend/`, `docs/`, `scripts/`, `resources/`, `locales/` and `.git/`. Restored git from origin plus 239 deleted tracked files. Rebuilt three features whose backend had never been committed — conversation list/switch/delete and the LLM settings endpoints — verifying them against the surviving tests and preload type definitions. Fixed `/api/chat/history` reading a stale import-time copy of the active conversation id. Force-tracked `installer.nsh` and `lithe-server.spec`, which `.gitignore` had been silently excluding.
+
 ## 2026-08-31
 - **Doc Pruning & Ponytail Ultra:** Archived historical log entries and changelog to `docs/ARCHIVE_LOGS.md`. Pruned INDEX.md to active focus and recent entries. Reduced FEATURES.md to dense checklist. Removed dead task specs. Consolidated playbook rules and architecture specs.
 - **Bugfix: Literal `\n\n`** in `ack_auto_summaries` (`memory.py:582`). Double-escaped backslashes wrote literal text instead of newlines. **Fix: Markdown rendering** — `MessageBubble.tsx` wrapped `<ReactMarkdown>` in a `<span>`, causing browsers to flatten block-level output (`<p>`, `<pre>`, `<table>`) into raw text. Changed to `<div>`. Branch: `chore/prune-docs-ponytail`.
