@@ -155,6 +155,34 @@ def update_whitelist(path: str, remove: bool = False) -> None:
         with open(_ACTIVE_ENV_PATH, "w", encoding="utf-8") as f:
             f.writelines(lines)
 
+def update_llm_config(api_key: str = "", ollama_url: str = "", ollama_model: str = "") -> None:
+    """Persists LLM settings to the active .env and updates the in-memory values.
+
+    A blank field means "leave unchanged" -- the settings UI never round-trips the
+    real API key (it only ever sees a mask), so an untouched key field must be a
+    no-op rather than an erase.
+    """
+    global GEMINI_API_KEY, OLLAMA_URL, OLLAMA_MODEL, NEEDS_ONBOARDING
+    from dotenv import set_key
+
+    env_path = _ACTIVE_ENV_PATH or _APPDATA_ENV
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.touch(exist_ok=True)
+
+    for name, value in (
+        ("GEMINI_API_KEY", api_key.strip()),
+        ("OLLAMA_URL", ollama_url.strip()),
+        ("OLLAMA_MODEL", ollama_model.strip()),
+    ):
+        if value:
+            set_key(str(env_path), name, value)
+
+    GEMINI_API_KEY = api_key.strip() or GEMINI_API_KEY
+    OLLAMA_URL = ollama_url.strip() or OLLAMA_URL
+    OLLAMA_MODEL = ollama_model.strip() or OLLAMA_MODEL
+    NEEDS_ONBOARDING = not GEMINI_API_KEY
+
+
 def update_excluded_extensions(ext: str, remove: bool = False) -> None:
     """Updates the excluded extensions list in memory and persists to the active .env file."""
     global EXCLUDED_EXTENSIONS

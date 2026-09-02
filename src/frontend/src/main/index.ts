@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, Tray, Menu, globalShortcut, nativeImage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { spawn, ChildProcess } from 'child_process'
+import { spawn, execFileSync, ChildProcess } from 'child_process'
 import { existsSync, mkdirSync, statSync, unlinkSync, renameSync, appendFileSync } from 'fs'
 
 // ---------------------------------------------------------------------------
@@ -124,7 +124,17 @@ function startPythonServer(): void {
 
 function stopPythonServer(): void {
   if (pythonProcess && !pythonProcess.killed) {
-    pythonProcess.kill()
+    // Kill the whole tree: kill() is TerminateProcess on one handle, which leaves
+    // any worker the server spawned holding port 8321 and the files under resources/.
+    if (process.platform === 'win32' && pythonProcess.pid) {
+      try {
+        execFileSync('taskkill', ['/pid', String(pythonProcess.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true })
+      } catch {
+        /* already exited */
+      }
+    } else {
+      pythonProcess.kill()
+    }
     pythonProcess = null
   }
 }
@@ -314,3 +324,8 @@ app.on('will-quit', () => {
   stopPythonServer()
 })
 
+app.on('before-quit', () => {
+  // Fires for tray Quit, installer/OS shutdown and app.quit() alike — kill the
+  // backend here so it can never outlive the window teardown.
+  stopPythonServer()
+})

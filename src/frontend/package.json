@@ -9,17 +9,42 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",
-    "dist": "electron-vite build && electron-builder --win --config",
-    "pack": "electron-vite build && electron-builder --win --dir --config"
+    "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
+    "build:win": "npm run build && electron-builder --win",
+    "dist": "electron-vite build && electron-builder --win",
+    "pack": "electron-vite build && electron-builder --win --dir"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/utils": "^3.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron": "^36.9.5",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^3.1.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
   },
   "build": {
     "appId": "com.lithe.app",
     "productName": "Lithe",
+    "asar": true,
     "directories": {
+      "buildResources": "build",
       "output": "release"
     },
     "files": [
-      "out/**/*"
+      "out/**/*",
+      "package.json"
     ],
     "extraResources": [
       {
@@ -30,7 +55,7 @@
         ]
       },
       {
-        "from": "../../docs/lithe-brand/icon.ico",
+        "from": "src/renderer/src/assets/icon.ico",
         "to": "icon.ico"
       }
     ],
@@ -43,7 +68,7 @@
           ]
         }
       ],
-      "icon": "../../docs/lithe-brand/icon.ico"
+      "icon": "src/renderer/src/assets/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -52,28 +77,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Lithe",
-      "installerIcon": "../../docs/lithe-brand/icon.ico",
-      "uninstallerIcon": "../../docs/lithe-brand/icon.ico",
-      "installerHeaderIcon": "../../docs/lithe-brand/icon.ico"
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "src/renderer/src/assets/icon.ico",
+      "uninstallerIcon": "src/renderer/src/assets/icon.ico",
+      "installerHeaderIcon": "src/renderer/src/assets/icon.ico"
     }
-  },
-  "dependencies": {
-    "@electron-toolkit/preload": "^3.0.1",
-    "@electron-toolkit/utils": "^3.0.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "react-markdown": "^10.1.0",
-    "rehype-highlight": "^7.0.2",
-    "remark-gfm": "^4.0.1"
-  },
-  "devDependencies": {
-    "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.1.0",
-    "@vitejs/plugin-react": "^4.4.1",
-    "electron": "^36.3.1",
-    "electron-builder": "^25.1.8",
-    "electron-vite": "^3.1.0",
-    "typescript": "^5.8.3",
-    "vite": "^6.3.5"
   }
 }

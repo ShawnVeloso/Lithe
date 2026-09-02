@@ -55,3 +55,11 @@ src/frontend/resources/python-backend/
 dist/
 build/ 
 
+
+# electron-builder's buildResources dir holds SOURCE (installer.nsh), not output.
+# The blanket build/ rule above would silently drop it from version control.
+!src/frontend/build/
+!src/frontend/build/installer.nsh
+
+# Pytest cache (regenerated on every run)
+.pytest_cache/
