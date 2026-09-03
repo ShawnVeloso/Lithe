@@ -188,6 +188,24 @@ def test_accept_executes_and_clears_pending_state(
 
 
 # ---------------------------------------------------------------------------
+# Defects must not masquerade as connectivity failures
+# ---------------------------------------------------------------------------
+
+def test_missing_tool_argument_is_reported_as_a_bug(isolated_db, scripted_gemini):
+    """A model that omits a required argument triggers a KeyError in the diff
+    builder (`call.args['path']`). That is a defect in Lithe, and it must not be
+    laundered into "Gemini connection failed" and a silent engine switch — which
+    is what the old blanket `except (..., Exception)` did.
+    """
+    scripted_gemini([function_call_response("delete_file", {})])  # no 'path'
+    result = brain.chat("delete something")
+
+    assert isinstance(result, str)
+    assert "internal error" in result.lower(), result
+    assert brain.active_engine != "ollama", "a bug silently switched engines"
+
+
+# ---------------------------------------------------------------------------
 # Multi-step reasoning (B3)
 # ---------------------------------------------------------------------------
 
