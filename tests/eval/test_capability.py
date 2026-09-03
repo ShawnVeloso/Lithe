@@ -13,6 +13,7 @@ import os
 import pytest
 
 from tests.eval.cases import CASES
+from tests.eval.conftest import ENGINE
 from tests.eval.scorecard import RESULTS
 
 REPEATS = int(os.getenv("LITHE_EVAL_REPEATS", "3"))
@@ -23,9 +24,10 @@ def _evaluate(case, outcome):
     text = (outcome["text"] or "").lower()
     tool_names = outcome["tool_names"]
 
-    # A silent fallback to Ollama would score a harness bug as a model failure.
-    if outcome["engine"] != "gemini":
-        return f"fell back to {outcome['engine']} (check the logs for a masked error)"
+    # An unintended engine switch would score a harness problem as a model
+    # failure. Which engine counts as correct depends on what is being scored.
+    if outcome["engine"] != ENGINE:
+        return f"ran on {outcome['engine']}, not {ENGINE} (check the logs)"
 
     expected_tool = case.get("expect_tool")
     if expected_tool:

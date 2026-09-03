@@ -6,8 +6,8 @@ Two separate things live in `tests/`:
 |---|---|---|
 | Command | `python -m pytest` | `LITHE_EVAL=1 python -m pytest -m eval` |
 | Speed | seconds | minutes |
-| Network | none (blocked) | real Gemini API calls |
-| Cost | free | consumes API quota |
+| Network | none (blocked) | real LLM calls (local Ollama by default) |
+| Cost | free | free on Ollama; consumes quota on Gemini |
 | Answers | "does the harness work?" | "does Lithe give good answers?" |
 
 The first is a correctness gate and should always be green. The second is a
@@ -80,26 +80,54 @@ and `config.DB_PATH`.
 ## The capability evaluation
 
 ```
-LITHE_EVAL=1 python -m pytest -m eval
-LITHE_EVAL=1 LITHE_EVAL_REPEATS=1 python -m pytest -m eval    # quicker, noisier
+LITHE_EVAL=1 python -m pytest -m eval                          # scores Ollama
+LITHE_EVAL=1 LITHE_EVAL_REPEATS=1 python -m pytest -m eval     # quicker, noisier
+LITHE_EVAL=1 LITHE_EVAL_ENGINE=gemini python -m pytest -m eval # needs a paid key
 ```
 
-Requires `LITHE_EVAL=1` *and* a configured `GEMINI_API_KEY`; otherwise every
-case skips. `addopts = -m "not eval"` keeps it out of normal runs entirely.
+Requires `LITHE_EVAL=1`; otherwise every case skips. `addopts = -m "not eval"`
+keeps it out of normal runs entirely.
 
-### It costs real quota — budget for it
+### Which engine gets scored
 
-A full run is roughly `cases × repeats` API calls: about **70 calls at the
-default 3 repeats**, and more when transport retries fire. On a free-tier key a
-couple of runs can exhaust the daily quota, after which everything fails with
-429 and the score collapses to 0% for reasons that have nothing to do with
-Lithe.
+`LITHE_EVAL_ENGINE` picks it and **defaults to `ollama`**.
 
-A pre-flight check makes one cheap call before collecting and skips the whole
-suite with an explanatory message if the API is unusable (quota exhausted, 503
-overload). That turns a nine-minute run that burns fifty unusable calls into a
-four-second skip. Use `LITHE_EVAL_REPEATS=1` while iterating, and save the
-3-repeat run for an actual before/after comparison.
+Gemini's free tier allows **20 `generate_content` requests per day per model**.
+One pass of this suite needs roughly **80–100** — `cases × repeats`, and a tool
+case costs several calls apiece. A free key therefore cannot complete a run no
+matter how long you wait for a reset. Three attempts established that the
+expensive way; the last ground for 67 minutes and reported a score composed
+entirely of fallbacks.
+
+Ollama is local, free and repeatable, which is what a measuring instrument
+needs. Scoring it also covers something that was never measured before: on a
+free Gemini key exhausted after 20 requests, the fallback path is where users
+spend much of their day.
+
+`LITHE_EVAL_ENGINE=ollama` does *not* call `_ollama_chat` directly. It installs
+a Gemini client that raises `ConnectError`, so `brain.chat()` takes exactly the
+path a user gets during an outage — including the fact that the Ollama branch
+has no agent loop and sends no history, which is why the multi-step cases
+cannot pass there. Scores are only comparable **between runs of the same
+engine**; the scorecard header names which one produced them.
+
+### Pre-flight and the abort guard
+
+Before collection the harness checks the chosen engine can actually serve:
+Ollama must be running *and* have `OLLAMA_MODEL` pulled; Gemini gets one cheap
+call. A failure skips the suite in seconds with the reason, instead of a
+nine-minute run burning fifty unusable calls.
+
+Passing pre-flight is not a promise the run will finish — it proves one request
+is allowed, not the ~80–100 a full pass needs. So the Gemini path also aborts
+mid-run: the first `RESOURCE_EXHAUSTED` sets a flag, every remaining case skips
+with that reason, and the scorecard is stamped `PARTIAL RUN`. A quota wall is
+not a capability result and must never be scored as one.
+
+Use `LITHE_EVAL_REPEATS=1` while iterating, and save the 3-repeat run for an
+actual before/after comparison.
+
+### The corpus
 
 It runs against a **synthetic corpus** built in a temp directory
 (`tests/eval/conftest.py::corpus`), never your real drive — a score is only
@@ -118,15 +146,23 @@ varies. A majority passes the case; a minority reports it flaky.
 
 ### Two things the harness does on purpose
 
-**Engine integrity check.** If a case falls back to Ollama it is scored as a
-failure with an explicit reason, never as a capability result. `brain.chat()`
-catches bare `Exception` and reroutes to Ollama, so without this a bug in
-Lithe — or a Gemini 503 — would silently be recorded as the model giving a bad
+**Engine integrity check.** If a case runs on an engine other than the one
+being scored, it is recorded as a failure with an explicit reason rather than
+as a capability result. `brain.chat()` reroutes to Ollama on a transport error,
+so without this a Gemini 503 would silently be scored as the model giving a bad
 answer.
 
 **Transport retries.** Gemini returns 503 "high demand" often enough to distort
-a score. `EvalHarness.ask()` detects the fallback and retries with backoff, so
-transport noise is not counted against capability.
+a score. `EvalHarness.ask()` detects the wrong engine and retries with backoff,
+so transport noise is not counted against capability. A 429 is deliberately
+*not* retried — the quota is gone for the day, so the run aborts instead.
+
+**Tool-call recording.** `brain.chat()` returns only final text, so the harness
+wraps the client to capture which tool was chosen — that is most of what is
+being measured. Gemini is recorded by wrapping the client object; Ollama is
+spoken to with a bare `httpx.post`, so that is wrapped instead. Neither
+requires production code to cooperate: an evaluation that needed `brain.py` to
+know it was being tested would be measuring something other than what ships.
 
 ### Reading the scorecard
 
