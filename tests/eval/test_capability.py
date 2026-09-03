@@ -41,7 +41,11 @@ def _evaluate(case, outcome):
 
     missing = [t for t in case.get("expect_all_tools", []) if t not in tool_names]
     if missing:
-        return f"never called {', '.join(missing)}; called {tool_names or 'nothing'}"
+        detail = f"executed {tool_names or 'nothing'}"
+        requested = outcome.get("requested_names") or []
+        if requested != tool_names:
+            detail += f" (model asked for {requested})"
+        return f"never ran {', '.join(missing)}; {detail}"
 
     if case.get("expect_no_tool") and tool_names:
         return f"expected no tool call, got {tool_names}"

@@ -190,7 +190,8 @@ class OllamaRecorder:
     """
 
     def __init__(self):
-        self.tool_calls = []
+        self.tool_calls = []   # what Lithe actually executed
+        self.requested = []    # what the model asked for
         self._real_post = None
 
     def __enter__(self):
@@ -212,15 +213,25 @@ class OllamaRecorder:
         return False
 
     def _harvest(self, response):
+        """Separate what the model asked for from what Lithe ran.
+
+        _ollama_chat takes `message["tool_calls"][0]` and stops -- there is no
+        agent loop on this path. Recording every requested call as though it
+        ran made multistep-profile-then-chart report "now passing" when the
+        model had merely *named* both tools and Lithe executed one. A
+        multi-step case has to be scored on execution or it measures nothing.
+        """
         try:
             message = response.json().get("message", {})
         except Exception:
             return
-        for call in (message.get("tool_calls") or []):
+        calls = message.get("tool_calls") or []
+        for index, call in enumerate(calls):
             function = call.get("function", {})
-            self.tool_calls.append(
-                (function.get("name", ""), dict(function.get("arguments") or {}))
-            )
+            entry = (function.get("name", ""), dict(function.get("arguments") or {}))
+            self.requested.append(entry)
+            if index == 0:
+                self.tool_calls.append(entry)
 
 
 class EvalHarness:
@@ -296,10 +307,15 @@ class EvalHarness:
         else:
             text = answer or ""
 
+        requested = getattr(recorder, "requested", recorder.tool_calls)
         return {
             "text": text,
             "tool_calls": recorder.tool_calls,
             "tool_names": [name for name, _ in recorder.tool_calls],
+            # Only differs on the Ollama path, which executes the first call
+            # and drops the rest. Scored cases use tool_names (executed);
+            # this is here so a failure detail can say what was asked for.
+            "requested_names": [name for name, _ in requested],
             "engine": brain.active_engine,
             "error": getattr(recorder, "error", None),
         }
