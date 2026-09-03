@@ -1,14 +1,16 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-09-03T01:20 (PHT)
+> **Last Updated:** 2026-09-03T02:40 (PHT)
 
 ---
 
 ## Current Focus
-- **Working on:** nothing — recovery and repackaging complete, `main` synced with origin
-- **Next up:** TBD
-- **Then:** TBD
+- **Working on:** capability audit — measuring whether the agent loop, tool
+  dispatch and retrieval actually work, before changing them
+- **Next up:** B2 `fix/gemini-tool-name-mismatch` — restore the 5 tools that are
+  dead on the Gemini path
+- **Then:** B2b narrow exception handling, B3 bounded agent loop, B4 `read_file`
 - **Blocked on:** nothing
 
 > **Verify before shipping:** the install→upgrade cycle has still never been
@@ -26,7 +28,7 @@
 | **F-01** — Core LLM Connection | ✅ Complete | Gemini API via `google-genai`, env-var loaded |
 | **F-02** — Minimal Chat Interface | ✅ Complete | Electron + React, electron-vite, FastAPI bridge |
 | **F-03** — Local Directory Indexer | ✅ Complete | SQLite + whitelisted directory crawling |
-| **F-04** — RAG & File Context | ✅ Complete | Regex extraction, SQLite lookup, context injection |
+| **F-04** — File Context Injection | ✅ Complete | Regex `name.ext` detection, exact-basename SQLite lookup, whole-file injection. Not retrieval: no content index, so a prompt that names no file injects nothing. |
 | **F-05** — Basic Task Execution | ✅ Complete | LLM Function Calling with dynamic safeword wrappers |
 | **F-06** — Candid Persona & Safeword | ✅ Complete | Dual system prompts, case-insensitive safeword |
 | **F-07** — Desktop Packaging | ✅ Complete | PyInstaller backend + electron-builder NSIS installer. `lithe-server.spec` and `src/frontend/build/installer.nsh` are hand-maintained source and are now force-tracked past `.gitignore` — both were previously ignored and unrecoverable. |
@@ -73,3 +75,4 @@
 | 2026-08-31 | Antigravity | **Bugfix: Literal `\n\n`** in `ack_auto_summaries` (`memory.py:582`). Double-escaped backslashes wrote literal text instead of newlines. **Fix: Markdown rendering** — `MessageBubble.tsx` wrapped `<ReactMarkdown>` in a `<span>`, causing browsers to flatten block-level output (`<p>`, `<pre>`, `<table>`) into raw text. Changed to `<div>`. Branch: `chore/prune-docs-ponytail`. |
 | 2026-09-02 | Claude Opus 5 | **Working-tree recovery.** An interrupted folder move left directories in place but stripped their files, emptying `src/backend/`, `docs/`, `scripts/`, `resources/`, `locales/` and `.git/` itself (271 dirs, 0 files — git was unreadable). Restored `.git` from origin and checked out 239 deleted tracked files. Three features had a surviving frontend but a backend that was never committed, so origin could not restore them; rebuilt `memory.get_conversations`/`delete_conversation`, `brain.switch_conversation`, `config.update_llm_config`, and the `/api/chat/conversations`, `/api/chat/switch` and `/api/config/llm` endpoints, verified against the surviving `tests/test_memory.py` and `env.d.ts` response shapes. Fixed `/api/chat/history` binding `_current_conversation_id` by value at import, so it never saw a switch. Merged the original `package.json` build config back over the Sep-1 reconstruction. Tests 33→36 passing. |
 | 2026-09-03 | Claude Opus 5 | **Backend repackaging.** Reconstructed the lost `lithe-server.spec` (gitignored by `*.spec`, so it was in neither origin nor any transcript) from `server_entry.py` and the shipped bundle. The packaged backend was found to be from Aug 3 — eight days older than `data_tools.py` — so it had never contained pandas/matplotlib at all. Rebuilt: 43MB → 121MB bundle, GUI toolkits excluded since matplotlib is pinned to Agg. Added `openpyxl` as a hidden import because pandas resolves its Excel engine by name at call time, which would have failed `profile_data` on `.xlsx` at runtime. Verified the packaged exe serves the recovered endpoints, then rebuilt the installer (130MB). |
+| 2026-09-03 | Claude Opus 5 | **Evaluation harness (U-16).** Added a way to measure Lithe rather than assume it. `pytest.ini` (`pythonpath`, `testpaths`, eval gating) so bare `pytest` works and the root-level live-API script is no longer collected. `tests/conftest.py` with shared DB isolation plus autouse fixtures that reset `brain`'s module globals and block real network calls — necessary because importing `brain` runs `_load_history()` at module scope against the real DB. `tests/support/fake_gemini.py` scripts the LLM with genuine `google.genai.types` objects (a MagicMock would hide the very bug below). New: `test_tool_contract.py` (agent loop + the mutating-tool confirmation handshake, previously untested despite being the real safety gate), `test_retrieval.py`, `test_safeword.py`. Repaired `test_watch_trigger.py`, which carried 121 duplicated lines including a truncated assertion-less test; collection count unchanged at 8, proving the deletion was safe. Added opt-in live evaluation (`tests/eval/`) scoring tool selection, argument correctness, retrieval, refusal, hallucination and safeword against a synthetic corpus. **10 defects recorded as `xfail(strict=True)`** so they are listed on every run and cannot be fixed silently — notably that 5 of 9 tools are unreachable on Gemini because the SDK declares them by `__name__` (`profile_data_wrapper`) while `tool_map` is keyed `profile_data`. Suite 36 → 56 passing + 11 xfailed. No `src/` changes. Branch: `test/eval-harness`. |
