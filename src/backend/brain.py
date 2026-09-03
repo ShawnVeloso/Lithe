@@ -30,8 +30,12 @@ from src.backend.prompts.system_prompt import (
 from src.backend.retrieval import get_file_contexts, read_file_securely, MAX_FILE_SIZE_BYTES
 from src.backend.tools import execute_rename, execute_delete, execute_write
 from src.backend.memory import search_files_by_name, record_action, insert_auto_summary
-from src.backend.data_tools import profile_data, inline_chart
-from src.backend.watch_rules import create_watch_rule, list_watch_rules, delete_watch_rule
+from src.backend.data_tools import profile_data as _profile_data, inline_chart as _inline_chart
+from src.backend.watch_rules import (
+    create_watch_rule as _create_watch_rule,
+    list_watch_rules as _list_watch_rules,
+    delete_watch_rule as _delete_watch_rule,
+)
 import os
 import json
 import time
@@ -515,7 +519,6 @@ def chat(user_message: str) -> str:
         Args:
             keyword: A partial filename or keyword to search for.
         """
-        print(f"[TOOL EXECUTED] search_files: {keyword}")
         results = search_files_by_name(keyword)
         import json
         if not results:
@@ -529,15 +532,15 @@ def chat(user_message: str) -> str:
             lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
         return f"Found {len(results)} file(s) matching '{keyword}':\n" + "\n".join(lines)
 
-    def profile_data_wrapper(file_path: str) -> str:
+    def profile_data(file_path: str) -> str:
         """Reads a CSV or Excel file and returns summary statistics, data types, and null counts.
         Use this to understand the structure and contents of a dataset.
         Args:
             file_path: The filename or absolute path of the dataset (.csv or .xlsx).
         """
-        return profile_data(file_path, conversation_id=_current_conversation_id)
+        return _profile_data(file_path, conversation_id=_current_conversation_id)
 
-    def inline_chart_wrapper(file_path: str, chart_type: str, x_column: str, y_column: str = "", title: str = "") -> str:
+    def inline_chart(file_path: str, chart_type: str, x_column: str, y_column: str = "", title: str = "") -> str:
         """Reads a dataset and generates an inline chart (bar, line, scatter, hist).
         Returns the chart image to the user directly.
         Args:
@@ -547,40 +550,37 @@ def chat(user_message: str) -> str:
             y_column: Column for the Y axis (required for bar, line, scatter).
             title: Optional title for the chart.
         """
-        return inline_chart(file_path, chart_type, x_column, y_column, title, conversation_id=_current_conversation_id)
+        return _inline_chart(file_path, chart_type, x_column, y_column, title, conversation_id=_current_conversation_id)
 
-    def create_watch_rule_wrapper(directory: str, pattern: str) -> str:
+    def create_watch_rule(directory: str, pattern: str) -> str:
         """Creates a watch rule to monitor a directory for files matching a glob pattern.
         The directory must already be in the whitelist. The only supported action is 'summarize'.
         Args:
             directory: The absolute path of the directory to watch (must be whitelisted).
             pattern: A file glob pattern, e.g. '*.pdf' or 'report_*.csv'.
         """
-        return create_watch_rule(directory, pattern, conversation_id=_current_conversation_id)
+        return _create_watch_rule(directory, pattern, conversation_id=_current_conversation_id)
 
-    def list_watch_rules_wrapper() -> str:
+    def list_watch_rules() -> str:
         """Lists all active watch rules (directory, pattern, and creation date)."""
-        return list_watch_rules(conversation_id=_current_conversation_id)
+        return _list_watch_rules(conversation_id=_current_conversation_id)
 
-    def delete_watch_rule_wrapper(rule_id: int) -> str:
+    def delete_watch_rule(rule_id: int) -> str:
         """Deletes (deactivates) a watch rule by its numeric ID.
         Args:
             rule_id: The ID of the watch rule to delete.
         """
-        return delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
+        return _delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
 
-    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper, inline_chart_wrapper, create_watch_rule_wrapper, list_watch_rules_wrapper, delete_watch_rule_wrapper]
-    tool_map = {
-        "rename_file": rename_file,
-        "delete_file": delete_file,
-        "write_file": write_file,
-        "search_files": search_files,
-        "profile_data": profile_data_wrapper,
-        "inline_chart": inline_chart_wrapper,
-        "create_watch_rule": create_watch_rule_wrapper,
-        "list_watch_rules": list_watch_rules_wrapper,
-        "delete_watch_rule": delete_watch_rule_wrapper,
-    }
+    tools = [
+        rename_file, delete_file, write_file, search_files,
+        profile_data, inline_chart,
+        create_watch_rule, list_watch_rules, delete_watch_rule,
+    ]
+    # Keyed by __name__ because that is exactly what the Gemini SDK uses when it
+    # builds the FunctionDeclaration, so a tool can never be advertised under a
+    # name this map cannot resolve.
+    tool_map = {fn.__name__: fn for fn in tools}
 
     config = types.GenerateContentConfig(
         system_instruction=system_prompt,
@@ -806,7 +806,6 @@ def chat_stream(user_message: str):
         Args:
             keyword: A partial filename or keyword to search for.
         """
-        print(f"[TOOL EXECUTED] search_files: {keyword}")
         results = search_files_by_name(keyword)
         import json
         if not results:
@@ -820,15 +819,15 @@ def chat_stream(user_message: str):
             lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
         return f"Found {len(results)} file(s) matching '{keyword}':\n" + "\n".join(lines)
 
-    def profile_data_wrapper(file_path: str) -> str:
+    def profile_data(file_path: str) -> str:
         """Reads a CSV or Excel file and returns summary statistics, data types, and null counts.
         Use this to understand the structure and contents of a dataset.
         Args:
             file_path: The filename or absolute path of the dataset (.csv or .xlsx).
         """
-        return profile_data(file_path, conversation_id=_current_conversation_id)
+        return _profile_data(file_path, conversation_id=_current_conversation_id)
 
-    def inline_chart_wrapper(file_path: str, chart_type: str, x_column: str, y_column: str = "", title: str = "") -> str:
+    def inline_chart(file_path: str, chart_type: str, x_column: str, y_column: str = "", title: str = "") -> str:
         """Reads a dataset and generates an inline chart (bar, line, scatter, hist).
         Returns the chart image to the user directly.
         Args:
@@ -838,40 +837,37 @@ def chat_stream(user_message: str):
             y_column: Column for the Y axis (required for bar, line, scatter).
             title: Optional title for the chart.
         """
-        return inline_chart(file_path, chart_type, x_column, y_column, title, conversation_id=_current_conversation_id)
+        return _inline_chart(file_path, chart_type, x_column, y_column, title, conversation_id=_current_conversation_id)
 
-    def create_watch_rule_wrapper(directory: str, pattern: str) -> str:
+    def create_watch_rule(directory: str, pattern: str) -> str:
         """Creates a watch rule to monitor a directory for files matching a glob pattern.
         The directory must already be in the whitelist. The only supported action is 'summarize'.
         Args:
             directory: The absolute path of the directory to watch (must be whitelisted).
             pattern: A file glob pattern, e.g. '*.pdf' or 'report_*.csv'.
         """
-        return create_watch_rule(directory, pattern, conversation_id=_current_conversation_id)
+        return _create_watch_rule(directory, pattern, conversation_id=_current_conversation_id)
 
-    def list_watch_rules_wrapper() -> str:
+    def list_watch_rules() -> str:
         """Lists all active watch rules (directory, pattern, and creation date)."""
-        return list_watch_rules(conversation_id=_current_conversation_id)
+        return _list_watch_rules(conversation_id=_current_conversation_id)
 
-    def delete_watch_rule_wrapper(rule_id: int) -> str:
+    def delete_watch_rule(rule_id: int) -> str:
         """Deletes (deactivates) a watch rule by its numeric ID.
         Args:
             rule_id: The ID of the watch rule to delete.
         """
-        return delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
+        return _delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
 
-    tools = [rename_file, delete_file, write_file, search_files, profile_data_wrapper, inline_chart_wrapper, create_watch_rule_wrapper, list_watch_rules_wrapper, delete_watch_rule_wrapper]
-    tool_map = {
-        "rename_file": rename_file,
-        "delete_file": delete_file,
-        "write_file": write_file,
-        "search_files": search_files,
-        "profile_data": profile_data_wrapper,
-        "inline_chart": inline_chart_wrapper,
-        "create_watch_rule": create_watch_rule_wrapper,
-        "list_watch_rules": list_watch_rules_wrapper,
-        "delete_watch_rule": delete_watch_rule_wrapper,
-    }
+    tools = [
+        rename_file, delete_file, write_file, search_files,
+        profile_data, inline_chart,
+        create_watch_rule, list_watch_rules, delete_watch_rule,
+    ]
+    # Keyed by __name__ because that is exactly what the Gemini SDK uses when it
+    # builds the FunctionDeclaration, so a tool can never be advertised under a
+    # name this map cannot resolve.
+    tool_map = {fn.__name__: fn for fn in tools}
 
     config = types.GenerateContentConfig(
         system_instruction=system_prompt,

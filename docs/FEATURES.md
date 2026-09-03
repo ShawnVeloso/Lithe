@@ -26,8 +26,8 @@
 - [x] **U-08: Indexing Efficiency** — Startup modification reconciliation to eliminate redundant scans; smart binary extension filtering.
 - [x] **U-09: Fast-Fail Fallback** — 5s connection timeout for instantaneous failover to local compute; live active engine badge.
 - [x] **U-10: Audit Log Export** — Complete decision, tool proposal, and execution history exportable via JSON/CSV.
-- [x] **U-11: Data Science Tools** — LLM tools for dataset profiling (`profile_data`) and chart rendering (`inline_chart` via matplotlib SSE).
-- [x] **U-12: Watch Rules Storage** — Persistent automation rules table (`watch_rules`) and LLM management tools (`create_watch_rule`, `list_watch_rules`, `delete_watch_rule`).
+- [x] **U-11: Data Science Tools** — LLM tools for dataset profiling (`profile_data`) and chart rendering (`inline_chart` via matplotlib SSE). *Non-functional on the Gemini path until 2026-09-03: the SDK named them after the wrapper closures, so dispatch never resolved them.*
+- [x] **U-12: Watch Rules Storage** — Persistent automation rules table (`watch_rules`) and LLM management tools (`create_watch_rule`, `list_watch_rules`, `delete_watch_rule`). *Same wrapper-naming defect as U-11; fixed 2026-09-03.*
 - [x] **U-13: Watch-and-Summarize Trigger** — Automatic background summarization dispatch on matching file creation events.
 - [x] **U-14: Watch-and-Summarize UI Delivery** — Live WebSocket streaming and pending summary catch-up rendered with `watch>` prefix.
 - [x] **U-15: System Tray & Global Hotkey** — Native Windows tray icon with restore/quit menu and `Ctrl+Shift+L` global summon hotkey.
