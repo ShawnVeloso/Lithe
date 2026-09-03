@@ -21,6 +21,7 @@ EXPECTED_TOOL_NAMES = {
     "delete_file",
     "write_file",
     "search_files",
+    "read_file",
     "profile_data",
     "inline_chart",
     "create_watch_rule",

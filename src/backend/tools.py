@@ -235,3 +235,76 @@ def execute_write(path: str, content: str, mode: str, safeword_active: bool, con
         err = f"ERROR: Failed to write to file: {str(e)}"
         record_action("write_file", json.dumps({"path": path}), reversible=False, decision_outcome="accepted", execution_result=err, conversation_id=conversation_id)
         return err
+
+
+# ---------------------------------------------------------------------------
+# Read-only inspection
+# ---------------------------------------------------------------------------
+
+# Deliberately below retrieval.MAX_FILE_SIZE_BYTES (100KB). A retrieval
+# injection is spliced into one message, but a read_file result becomes a
+# function_response in the transcript and is replayed to the model on every
+# subsequent turn, so it is the more expensive of the two.
+MAX_READ_BYTES = 40 * 1024
+
+
+def execute_read(path: str, conversation_id: str = "") -> str:
+    """Reads a text file so the model can answer questions about its contents.
+
+    This is the companion to search_files, which only matches filenames. Without
+    it the model can locate a file but has no way to look inside it.
+
+    Returns the file's text, or an ERROR string. Oversized files are truncated
+    with an explicit header so the model knows it is seeing a fragment rather
+    than the whole document.
+    """
+    err = _validate_path(path, "path")
+    if err:
+        return err
+
+    def _do_read() -> str:
+        if not os.path.exists(path):
+            return f"ERROR: File not found: '{path}'"
+        if os.path.isdir(path):
+            return f"ERROR: '{path}' is a directory, not a file."
+
+        size = os.path.getsize(path)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read(MAX_READ_BYTES)
+        except UnicodeDecodeError:
+            return (
+                f"ERROR: '{path}' is not a UTF-8 text file (it may be a PDF, image "
+                "or other binary format), so its contents cannot be read."
+            )
+
+        if size > MAX_READ_BYTES:
+            header = (
+                f"[TRUNCATED: showing the first {MAX_READ_BYTES // 1024}KB of "
+                f"{size // 1024}KB. The rest of the file was not read.]\n"
+            )
+            return header + content
+        return content
+
+    try:
+        result = _run_with_timeout(_do_read)
+        record_action(
+            "read_file",
+            json.dumps({"path": path}),
+            reversible=False,
+            decision_outcome="auto-executed",
+            execution_result="success" if not result.startswith("ERROR") else result,
+            conversation_id=conversation_id,
+        )
+        return result
+    except Exception as e:
+        err = f"ERROR: Failed to read file: {str(e)}"
+        record_action(
+            "read_file",
+            json.dumps({"path": path}),
+            reversible=False,
+            decision_outcome="auto-executed",
+            execution_result=err,
+            conversation_id=conversation_id,
+        )
+        return err

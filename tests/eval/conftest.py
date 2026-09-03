@@ -28,6 +28,40 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "eval" in item.keywords:
                 item.add_marker(skip)
+        return
+
+    # Pre-flight: one cheap call to confirm the API is actually usable. Without
+    # this the suite grinds through every case (each retrying three times with
+    # backoff), burns quota it cannot use, and reports a 0% score that says
+    # nothing about Lithe. A quota error is not a capability result.
+    reason = _api_unusable_reason()
+    if reason:
+        skip = pytest.mark.skip(reason=reason)
+        for item in items:
+            if "eval" in item.keywords:
+                item.add_marker(skip)
+
+
+def _api_unusable_reason():
+    """Returns a human-readable reason if Gemini cannot serve the eval, else None."""
+    from src.backend.config import GEMINI_API_KEY, GEMINI_MODEL
+    from google import genai
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        client.models.generate_content(model=GEMINI_MODEL, contents="ok")
+        return None
+    except Exception as e:
+        text = str(e)
+        if "RESOURCE_EXHAUSTED" in text or "429" in text:
+            return (
+                "Gemini quota is exhausted (429) — the evaluation would score 0% "
+                "for reasons that have nothing to do with Lithe. Try again after "
+                "the quota resets."
+            )
+        if "UNAVAILABLE" in text or "503" in text:
+            return "Gemini is returning 503 (high demand); results would be noise."
+        return f"Gemini pre-flight failed ({type(e).__name__}): {text[:120]}"
 
 
 class RecordingClient:

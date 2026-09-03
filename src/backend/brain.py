@@ -28,7 +28,7 @@ from src.backend.prompts.system_prompt import (
     detect_safeword,
 )
 from src.backend.retrieval import get_file_contexts, read_file_securely, MAX_FILE_SIZE_BYTES
-from src.backend.tools import execute_rename, execute_delete, execute_write
+from src.backend.tools import execute_rename, execute_delete, execute_write, execute_read
 from src.backend.memory import search_files_by_name, record_action, insert_auto_summary
 from src.backend.data_tools import profile_data as _profile_data, inline_chart as _inline_chart
 from src.backend.watch_rules import (
@@ -161,6 +161,20 @@ OLLAMA_TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
+            "name": "read_file",
+            "description": "Reads the text contents of a file so you can answer questions about it. Use after search_files locates a path. Large files are truncated; binary files cannot be read.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "The absolute path of the file to read."}
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "rename_file",
             "description": "Renames a file or directory.",
             "parameters": {
@@ -207,7 +221,7 @@ OLLAMA_TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "search_files",
-            "description": "Searches the local file index for files matching a keyword. You MUST call this tool whenever the user asks which files contain a word, or asks to locate files, even if they don't know the exact filename or extension.",
+            "description": "Finds indexed files whose FILENAME contains the keyword. Matches names only and cannot see inside files; use read_file on a returned path to inspect contents. Returns at most 20 matches, most recently modified first.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -650,11 +664,15 @@ def chat(user_message: str) -> str:
         return execute_write(path, content, mode, safeword_active=True, conversation_id=_current_conversation_id)
 
     def search_files(keyword: str) -> str:
-        """Searches the local file index for files matching a keyword.
-        You MUST call this tool whenever the user asks which files contain a word, 
-        or asks to locate files, even if they don't know the exact filename or extension.
+        """Finds indexed files whose FILENAME contains the keyword.
+
+        This matches names only — it cannot see inside files. To answer a
+        question about a file's contents, call this to locate the file and then
+        call read_file on the path it returns. Returns at most 20 matches, most
+        recently modified first.
+
         Args:
-            keyword: A partial filename or keyword to search for.
+            keyword: A word or fragment appearing in the filename.
         """
         results = search_files_by_name(keyword)
         import json
@@ -667,7 +685,20 @@ def chat(user_message: str) -> str:
             size_kb = round(r['size_bytes'] / 1024, 1)
             cat = f" [{r['category']}]" if r.get('category') else ""
             lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
-        return f"Found {len(results)} file(s) matching '{keyword}':\n" + "\n".join(lines)
+        capped = " (showing the 20 most recently modified; there may be more)" if len(results) >= 20 else ""
+        return f"Found {len(results)} file(s) matching '{keyword}'{capped}:\n" + "\n".join(lines)
+
+    def read_file(path: str) -> str:
+        """Reads the text contents of a file so you can answer questions about it.
+
+        Use this after search_files has told you where a file is, or whenever the
+        user asks what a file says. Large files are truncated with an explicit
+        marker; binary files (PDF, images) cannot be read.
+
+        Args:
+            path: The absolute path of the file to read.
+        """
+        return execute_read(path, conversation_id=_current_conversation_id)
 
     def profile_data(file_path: str) -> str:
         """Reads a CSV or Excel file and returns summary statistics, data types, and null counts.
@@ -710,7 +741,7 @@ def chat(user_message: str) -> str:
         return _delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
 
     tools = [
-        rename_file, delete_file, write_file, search_files,
+        rename_file, delete_file, write_file, search_files, read_file,
         profile_data, inline_chart,
         create_watch_rule, list_watch_rules, delete_watch_rule,
     ]
@@ -881,11 +912,15 @@ def chat_stream(user_message: str):
         return execute_write(path, content, mode, safeword_active=True, conversation_id=_current_conversation_id)
 
     def search_files(keyword: str) -> str:
-        """Searches the local file index for files matching a keyword.
-        You MUST call this tool whenever the user asks which files contain a word,
-        or asks to locate files, even if they don't know the exact filename or extension.
+        """Finds indexed files whose FILENAME contains the keyword.
+
+        This matches names only — it cannot see inside files. To answer a
+        question about a file's contents, call this to locate the file and then
+        call read_file on the path it returns. Returns at most 20 matches, most
+        recently modified first.
+
         Args:
-            keyword: A partial filename or keyword to search for.
+            keyword: A word or fragment appearing in the filename.
         """
         results = search_files_by_name(keyword)
         import json
@@ -898,7 +933,20 @@ def chat_stream(user_message: str):
             size_kb = round(r['size_bytes'] / 1024, 1)
             cat = f" [{r['category']}]" if r.get('category') else ""
             lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
-        return f"Found {len(results)} file(s) matching '{keyword}':\n" + "\n".join(lines)
+        capped = " (showing the 20 most recently modified; there may be more)" if len(results) >= 20 else ""
+        return f"Found {len(results)} file(s) matching '{keyword}'{capped}:\n" + "\n".join(lines)
+
+    def read_file(path: str) -> str:
+        """Reads the text contents of a file so you can answer questions about it.
+
+        Use this after search_files has told you where a file is, or whenever the
+        user asks what a file says. Large files are truncated with an explicit
+        marker; binary files (PDF, images) cannot be read.
+
+        Args:
+            path: The absolute path of the file to read.
+        """
+        return execute_read(path, conversation_id=_current_conversation_id)
 
     def profile_data(file_path: str) -> str:
         """Reads a CSV or Excel file and returns summary statistics, data types, and null counts.
@@ -941,7 +989,7 @@ def chat_stream(user_message: str):
         return _delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
 
     tools = [
-        rename_file, delete_file, write_file, search_files,
+        rename_file, delete_file, write_file, search_files, read_file,
         profile_data, inline_chart,
         create_watch_rule, list_watch_rules, delete_watch_rule,
     ]
