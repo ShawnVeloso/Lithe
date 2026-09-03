@@ -35,6 +35,26 @@ User → ChatInput → App.tsx state → window.litheAPI.chat()
        → response bubbles back through the same chain
 ```
 
+Within one turn, `brain.chat()` runs a bounded tool loop rather than a single
+round trip:
+
+```
+  model call ─┬─> text answer ──────────────────> return
+              │
+              ├─> read-only tool ─> execute ─> feed result back ─┐
+              │        ^                                         │
+              │        └──── up to MAX_TOOL_ROUNDS (5) ──────────┘
+              │
+              └─> mutating tool ─> pause, return diff to the UI
+                                    └─> user confirms ─> execute ─> resume loop
+                                                                    with the
+                                                                    remaining
+                                                                    budget
+```
+
+On exhausting the budget the model is called once more with tools removed, so
+it must answer in text instead of emitting a call that would be discarded.
+
 ### Security Boundaries
 - **Renderer** has zero access to `electron` or `node` — all backend calls go through `contextBridge`.
 - **Electron main** spawns the Python server as a child process and polls `/api/health` before showing the window.

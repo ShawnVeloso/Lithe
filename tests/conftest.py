@@ -44,6 +44,7 @@ _BRAIN_GLOBALS = (
     "_pending_tool_calls",
     "_pending_config",
     "_pending_tool_map",
+    "_pending_rounds_used",
     "_pending_ollama_messages",
     "_pending_ollama_tool_calls",
     "_pending_ollama_tool_map",
