@@ -10,14 +10,17 @@ nothing. A plain module is imported once and shared by both.
 RESULTS = []
 
 
-def render(write):
+def render(write, engine="?", aborted=None):
     """Print the capability scorecard. `write` takes one line of text."""
     if not RESULTS:
+        if aborted:
+            write("")
+            write(f"  Evaluation aborted before scoring: {aborted}")
         return
 
     write("")
     write("=" * 72)
-    write("LITHE CAPABILITY SCORECARD")
+    write(f"LITHE CAPABILITY SCORECARD  (engine: {engine})")
     write("=" * 72)
 
     categories = {}
@@ -52,6 +55,11 @@ def render(write):
             mark = "now passing" if r["verdict"] == "pass" else "still failing"
             write(f"      {r['id']:<28} {mark}")
 
+    if aborted:
+        write("")
+        write(f"  PARTIAL RUN -- {aborted}")
+
     write("")
-    write("  The absolute number means little. Compare it across branches.")
+    write("  The absolute number means little. Compare it across branches,")
+    write("  and only against runs of the same engine.")
     write("=" * 72)

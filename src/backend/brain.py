@@ -213,13 +213,36 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 # Ollama fallback (Phase 2: Reliability)
 # ---------------------------------------------------------------------------
-def _check_ollama_available() -> bool:
-    """Quick health check — returns True if Ollama is reachable."""
+def _ollama_models() -> list[str] | None:
+    """Model tags the local Ollama has pulled, or None if it is unreachable."""
     try:
         resp = httpx.get(f"{OLLAMA_URL}/api/tags", timeout=5)
-        return resp.status_code == 200
-    except (httpx.ConnectError, httpx.TimeoutException, Exception):
+        if resp.status_code != 200:
+            return None
+        return [m.get("name", "") for m in resp.json().get("models", [])]
+    except Exception:
+        return None
+
+
+def _model_is_pulled(model: str, available: list[str]) -> bool:
+    """Ollama reports tags as `llama3:latest`; a config of `llama3` means that."""
+    if not model:
         return False
+    wanted = model if ":" in model else f"{model}:latest"
+    return wanted in available or model in available
+
+
+def _check_ollama_available() -> bool:
+    """True only if Ollama can actually serve OLLAMA_MODEL.
+
+    This used to check that the server answered /api/tags and nothing else, so
+    a machine running Ollama without the configured model pulled passed the
+    health check and then failed the real request with a bare 404. Every
+    Gemini outage became "Error continuing conversation" instead of a fallback
+    that says what to install.
+    """
+    available = _ollama_models()
+    return available is not None and _model_is_pulled(OLLAMA_MODEL, available)
 
 OLLAMA_TOOLS_SCHEMA = [
     {
@@ -388,12 +411,24 @@ def _ollama_chat(system_prompt: str, user_message: str, tool_map: dict | None = 
         The model's text response, or a dict containing a tool_proposal,
         or a descriptive error string.
     """
-    if not _check_ollama_available():
+    available = _ollama_models()
+    if available is None:
         return (
             "Error: Both Gemini and Ollama are unavailable. "
             "Gemini failed (see above), and Ollama is not running at "
-            f"{OLLAMA_URL}. Start Ollama with `ollama serve` and ensure "
-            f"the '{OLLAMA_MODEL}' model is pulled (`ollama pull {OLLAMA_MODEL}`)."
+            f"{OLLAMA_URL}. Start it with `ollama serve`."
+        )
+    if not _model_is_pulled(OLLAMA_MODEL, available):
+        # Naming what *is* installed turns a dead end into one command.
+        installed = ", ".join(sorted(available)) or "none"
+        logger.warning(
+            "Ollama is running but %s is not pulled; installed: %s",
+            OLLAMA_MODEL, installed,
+        )
+        return (
+            f"Error: Gemini failed (see above) and Ollama does not have the "
+            f"configured model '{OLLAMA_MODEL}'. Run `ollama pull {OLLAMA_MODEL}`, "
+            f"or point Lithe at one you already have (installed: {installed})."
         )
 
     messages = [
