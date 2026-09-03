@@ -72,7 +72,28 @@ Lithe uses a unified crash logging architecture across all processes. All log fi
 - **Electron Main**: Captures native `uncaughtException`, `unhandledRejection`, and IPC invocation errors. Writes to `electron.log` using a lightweight, native `fs` file rotation (max 5MB, 1 backup). It also captures the Python backend's raw stdout/stderr streams into a separate `child.log`.
 - **Renderer UI**: Uses a React `ErrorBoundary` and global `window.onerror` to capture component crashes and unhandled UI exceptions. These errors are bridged via IPC to the main process and written to `electron.log`. A `[VIEW LOGS]` button in the System Panel opens the log folder natively.
 
-## 8. Key Dependencies
+## 8. Testing & Evaluation
+
+Two layers, kept deliberately separate (full detail in `docs/TESTING.md`):
+
+- **Unit + contract suite** (`python -m pytest`) — offline and deterministic.
+  Network is blocked by an autouse fixture. `tests/test_tool_contract.py`
+  drives the real `brain.chat()` with a scripted LLM client that returns
+  genuine `google.genai.types` objects, which is what makes it able to detect
+  a mismatch between the tool names declared to the model and the names the
+  dispatch map can resolve.
+- **Capability evaluation** (`LITHE_EVAL=1 python -m pytest -m eval`) — opt-in,
+  calls the real Gemini API against a synthetic corpus and prints a scorecard.
+  Excluded from normal runs via `addopts = -m "not eval"`.
+
+Known defects are recorded as `xfail(strict=True)` tests rather than prose, so
+they are listed on every run and cannot be fixed — or forgotten — silently.
+
+Because `brain.chat()` catches bare `Exception` and reroutes to Ollama, the
+evaluation explicitly asserts which engine served each case; otherwise a bug or
+a 503 would be scored as the model giving a poor answer.
+
+## 9. Key Dependencies
 
 ### Python Backend
 | Package | Version | Purpose |

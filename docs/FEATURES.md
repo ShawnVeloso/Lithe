@@ -8,7 +8,7 @@
 - [x] **F-01: Core LLM Connection** — Gemini API client (`google-genai`), secure `.env` key loading, system prompts.
 - [x] **F-02: Chat Interface** — Three-pane HUD desktop UI (Electron 36 + React 19 + TypeScript).
 - [x] **F-03: Local Directory Indexer** — SQLite database mapping whitelisted folders, exclusion lists (`node_modules`, `.git`, binaries).
-- [x] **F-04: RAG & File Context** — Regex detection of referenced files, SQLite lookup, in-context file injection (100KB cap).
+- [x] **F-04: File Context Injection** — Regex detection of `name.ext` tokens in the prompt, exact-basename SQLite lookup, whole-file injection (100KB head-truncated). Note: this is filename-triggered injection, not retrieval — there is no content index, so a query that does not name a file retrieves nothing. Content search is tracked as a future upgrade.
 - [x] **F-05: Task Execution & Safety** — LLM function calling with interactive UI proposal cards (`ToolProposalCard`) and execution diffs.
 - [x] **F-06: Candid Persona & Safeword** — Dual system prompts (critical candor vs. compliant override via `"Override Lithe"`).
 - [x] **F-07: Desktop Packaging** — PyInstaller bundled backend + electron-builder NSIS standalone Windows installer.
@@ -31,3 +31,4 @@
 - [x] **U-13: Watch-and-Summarize Trigger** — Automatic background summarization dispatch on matching file creation events.
 - [x] **U-14: Watch-and-Summarize UI Delivery** — Live WebSocket streaming and pending summary catch-up rendered with `watch>` prefix.
 - [x] **U-15: System Tray & Global Hotkey** — Native Windows tray icon with restore/quit menu and `Ctrl+Shift+L` global summon hotkey.
+- [x] **U-16: Evaluation Harness** — Scripted-LLM contract tests over the agent loop (`tests/test_tool_contract.py`), retrieval and safeword coverage, plus an opt-in live capability evaluation (`tests/eval/`) that scores tool selection, argument correctness, retrieval sufficiency, refusal and hallucination against a synthetic corpus. See `docs/TESTING.md`.
