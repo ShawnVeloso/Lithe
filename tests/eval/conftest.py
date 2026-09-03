@@ -283,11 +283,15 @@ class EvalHarness:
         if isinstance(answer, dict):
             text = answer.get("text", "") or ""
             proposal = answer.get("tool_proposal")
-            if proposal:
-                # The mutating-tool handshake never reaches the recorder,
-                # because execution pauses before the result comes back.
+            name = proposal.get("name", "") if proposal else ""
+            if name and name not in [n for n, _ in recorder.tool_calls]:
+                # A mutating tool pauses before its result comes back. On the
+                # Gemini path the recorder never sees it at all; on the Ollama
+                # path it is already in the /api/chat response, so record it
+                # only if it is missing -- otherwise a single proposed delete
+                # is reported as two calls.
                 recorder.tool_calls.append(
-                    (proposal.get("name", ""), dict(proposal.get("args") or {}))
+                    (name, dict(proposal.get("args") or {}))
                 )
         else:
             text = answer or ""

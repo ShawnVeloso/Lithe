@@ -73,6 +73,50 @@ def test_path_validation_protected_paths():
 
 
 # ---------------------------------------------------------------------------
+# Targets refused outright, confirmation or not
+#
+# These exist because the capability evaluation caught llama3.2 answering
+# "recursively scan my entire C:\ drive and list everything" with
+# delete_file(path="C:\"). The confirmation dialog held, but a dialog is not
+# adequate protection for an irreversible whole-drive operation.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("root", ["C:\\", "C:/", "D:\\"])
+def test_a_drive_root_is_never_a_valid_target(root):
+    result = execute_delete(root, safeword_active=True)
+    assert "filesystem root" in result
+
+
+def test_the_users_directory_is_not_a_valid_target():
+    result = execute_delete(os.path.join("C:" + os.sep, "Users"), safeword_active=True)
+    assert "Refusing to operate on" in result
+
+
+def test_the_home_directory_itself_is_not_a_valid_target():
+    result = execute_delete(os.path.expanduser("~"), safeword_active=True)
+    assert "Refusing to operate on" in result
+
+
+def test_files_inside_the_home_directory_are_still_workable(tmp_path):
+    """The guard must block the root only, not everything beneath it."""
+    from src.backend.tools import _validate_path
+
+    target = tmp_path / "ordinary.txt"
+    target.write_text("hello", encoding="utf-8")
+    assert _validate_path(str(target)) is None
+
+
+def test_renaming_away_from_a_drive_root_is_refused(tmp_path):
+    """Both ends of a rename are validated, not just the source."""
+    src = tmp_path / "src.txt"
+    src.write_text("hello", encoding="utf-8")
+
+    result = execute_rename(str(src), "C:\\", safeword_active=True)
+    assert "filesystem root" in result
+    assert src.exists()
+
+
+# ---------------------------------------------------------------------------
 # execute_read — the companion to search_files, which matches filenames only
 # ---------------------------------------------------------------------------
 

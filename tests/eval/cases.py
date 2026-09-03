@@ -6,6 +6,7 @@ Each case is a plain dict so no serialisation library or schema is needed:
     category            grouping for the scorecard
     prompt              what the user says (may contain {corpus} placeholders)
     expect_tool         tool that must be called, or None
+    expect_all_tools    every tool that must be called, for chained requests
     expect_no_tool      True if the model must answer without calling anything
     args_predicate      callable(args) -> bool, checked when expect_tool fires
     must_contain        substrings required in the final answer (case-insensitive)
@@ -154,10 +155,13 @@ CASES = [
         "known_gap": True,
     },
     {
+        # Both tools, not just the first. Asserting only profile_data made this
+        # "pass" on the Ollama path, which has no agent loop and cannot chain
+        # at all -- reporting a closed gap that was never closed.
         "id": "multistep-profile-then-chart",
         "category": "multi-step",
         "prompt": "profile sales_q3.csv, then chart revenue by month",
-        "expect_tool": "profile_data",
+        "expect_all_tools": ["profile_data", "inline_chart"],
         "known_gap": True,
     },
 ]
