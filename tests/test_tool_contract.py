@@ -209,10 +209,6 @@ def test_missing_tool_argument_is_reported_as_a_bug(isolated_db, scripted_gemini
 # Multi-step reasoning (B3)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B3: hard-coded two-call chain, a second-round tool call is discarded",
-)
 def test_second_round_tool_call_is_executed(isolated_db, scripted_gemini):
     """search_files, then act on what came back — the essence of an agent."""
     client = scripted_gemini([
@@ -228,10 +224,33 @@ def test_second_round_tool_call_is_executed(isolated_db, scripted_gemini):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B3: no loop exists, so there is no MAX_TOOL_ROUNDS bound to enforce",
-)
+def test_confirming_a_tool_resumes_the_loop(isolated_db, scripted_gemini, tmp_path, monkeypatch):
+    """Accepting a mutating tool must return to the loop, not end the turn.
+
+    The confirmation handshake interrupts the round sequence, so the resumed
+    turn has to carry the remaining budget and keep executing tools; otherwise
+    "delete this, then tell me what's left" stops after the delete.
+    """
+    monkeypatch.setattr(brain, "_current_conversation_id", "test-conv")
+    victim = tmp_path / "goner.txt"
+    victim.write_text("bye", encoding="utf-8")
+
+    client = scripted_gemini([
+        function_call_response("delete_file", {"path": str(victim)}),
+        function_call_response("search_files", {"keyword": "anything"}),
+        text_response("deleted it, and here is what is left"),
+    ])
+    brain.chat(f"delete {victim} then search for anything")
+    result = brain.handle_tool_response(accept=True)
+
+    assert not victim.exists()
+    # The search_files round after the confirmation needs its own model call.
+    assert client.call_count >= 3, (
+        f"loop did not resume after confirmation ({client.call_count} model calls)"
+    )
+    assert "here is what is left" in str(result)
+
+
 def test_agent_loop_is_bounded(isolated_db, scripted_gemini):
     """A model that keeps calling tools must be stopped, not followed forever."""
     endless = [function_call_response("search_files", {"keyword": "x"}) for _ in range(20)]

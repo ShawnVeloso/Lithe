@@ -45,6 +45,9 @@ _pending_session: list[types.Content] | None = None
 _pending_tool_calls = None
 _pending_config = None
 _pending_tool_map = None
+# Rounds already spent when a mutating tool paused the loop, so confirming it
+# resumes with the remaining budget instead of ending the turn.
+_pending_rounds_used = 0
 
 _pending_ollama_messages = None
 _pending_ollama_tool_calls = None
@@ -459,6 +462,140 @@ def _check_hallucination(user_message: str, response_text: str, engine: str = "g
 
 
 
+# Tools that change the filesystem always pause for explicit user confirmation.
+MUTATING_TOOLS = ("rename_file", "delete_file", "write_file")
+
+# How many times the model may call a tool and be asked again within one turn.
+# Bounded so a model that keeps calling tools cannot loop indefinitely.
+MAX_TOOL_ROUNDS = 5
+
+
+def _build_tool_diff(call) -> str:
+    """A human-readable preview of what a mutating tool would do."""
+    if call.name == "delete_file":
+        return f"- {call.args['path']}"
+
+    if call.name == "rename_file":
+        return f"- {call.args['source']}\n+ {call.args['destination']}"
+
+    if call.name == "write_file":
+        mode = call.args.get("mode", "overwrite")
+        content = call.args.get("content", "")
+        path = call.args["path"]
+        if mode != "append" and os.path.exists(path):
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                old_lines = f.readlines()
+            new_lines = [
+                line if line.endswith("\n") else line + "\n"
+                for line in content.splitlines()
+            ]
+            return "\n".join(
+                difflib.unified_diff(old_lines, new_lines, fromfile=path, tofile=path, lineterm="")
+            )
+        return "\n".join(f"+ {line}" for line in content.splitlines())
+
+    return ""
+
+
+def _execute_tool_calls(function_calls, tool_map):
+    """Run each call and build the function_response parts to send back.
+
+    Returns (parts, chart_data_uri). A chart is swapped for a short
+    acknowledgement in the transcript, because a base64 image would otherwise be
+    replayed to the model on every subsequent turn.
+    """
+    parts = []
+    chart_data_uri = None
+
+    for call in function_calls:
+        if call.name in tool_map:
+            try:
+                result = tool_map[call.name](**call.args)
+            except TypeError as e:
+                result = f"Argument Error: {e}"
+            except Exception as e:
+                result = f"Python Execution Error: {e}"
+        else:
+            result = f"Error: Tool {call.name} not recognized."
+
+        if call.name == "inline_chart" and isinstance(result, str) and result.startswith("data:image"):
+            chart_data_uri = result
+            result = "Chart generated and sent to user successfully."
+
+        parts.append(types.Part.from_function_response(name=call.name, response={"result": result}))
+
+    return parts, chart_data_uri
+
+
+def _tools_disabled(config):
+    """A copy of `config` with tools removed, to force a final text answer."""
+    try:
+        return config.model_copy(update={"tools": None})
+    except Exception:
+        return config
+
+
+def _drive_tool_rounds(response, contents, config, tool_map, rounds: int = 0):
+    """Keep calling the model until it answers in text or the budget runs out.
+
+    This is what makes Lithe an agent rather than a single tool-caller: the
+    model can search, see the result, and act on it. Previously the follow-up
+    response was returned as-is, so any tool call it contained was silently
+    dropped.
+
+    Returns (response, contents, chart_data_uri, proposal, rounds). A non-None
+    proposal means a mutating tool needs confirmation; the pending globals have
+    been set and the caller should hand it to the UI.
+    """
+    global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map
+    global _pending_rounds_used
+
+    chart_data_uri = None
+
+    while response.function_calls:
+        call = response.function_calls[0]
+
+        if call.name in MUTATING_TOOLS:
+            _pending_session = contents.copy()
+            _pending_session.append(response.candidates[0].content)
+            _pending_tool_calls = response.function_calls
+            _pending_config = config
+            _pending_tool_map = tool_map
+            _pending_rounds_used = rounds
+            proposal = {
+                "tool_proposal": {
+                    "name": call.name,
+                    "args": call.args,
+                    "diff": _build_tool_diff(call),
+                }
+            }
+            return response, contents, chart_data_uri, proposal, rounds
+
+        if rounds >= MAX_TOOL_ROUNDS:
+            # Ask once more with no tools available, so the model is forced to
+            # answer in text instead of emitting a call that would be discarded.
+            logger.warning(
+                "Tool round budget (%d) exhausted; requesting a final text answer.",
+                MAX_TOOL_ROUNDS,
+            )
+            response = _client.models.generate_content(
+                model=GEMINI_MODEL, contents=contents, config=_tools_disabled(config)
+            )
+            break
+
+        rounds += 1
+        contents.append(response.candidates[0].content)
+        parts, chart = _execute_tool_calls(response.function_calls, tool_map)
+        if chart:
+            chart_data_uri = chart
+        contents.append(types.Content(role="user", parts=parts))
+        response = _client.models.generate_content(
+            model=GEMINI_MODEL, contents=contents, config=config
+        )
+
+    return response, contents, chart_data_uri, None, rounds
+
+
 def chat(user_message: str) -> str:
     """Send a message to the Gemini LLM and return its response.
 
@@ -610,102 +747,19 @@ def chat(user_message: str) -> str:
         )
         active_engine = "gemini"
 
-        # --- Handle potential Function Calls ---
-        if response.function_calls:
-            # We only support one function call at a time for simplicity in the UI
-            call = response.function_calls[0]
-            
-            # --- Check if it's a mutating tool that needs confirmation ---
-            if call.name in ["rename_file", "delete_file", "write_file"]:
-                global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map
-                _pending_session = contents.copy()
-                _pending_session.append(response.candidates[0].content)
-                _pending_tool_calls = response.function_calls
-                _pending_config = config
-                _pending_tool_map = tool_map
-                
-                # Generate diff string
-                diff_str = ""
-                if call.name == "delete_file":
-                    diff_str = f"- {call.args['path']}"
-                elif call.name == "rename_file":
-                    diff_str = f"- {call.args['source']}\n+ {call.args['destination']}"
-                elif call.name == "write_file":
-                    import os
-                    mode = call.args.get("mode", "overwrite")
-                    content = call.args.get("content", "")
-                    if mode == "append":
-                        diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
-                    else:
-                        path = call.args['path']
-                        if os.path.exists(path):
-                            with open(path, 'r', encoding='utf-8') as f:
-                                old_lines = f.readlines()
-                            new_lines = [line + '\n' if not line.endswith('\n') else line for line in content.splitlines()]
-                            diff = difflib.unified_diff(old_lines, new_lines, fromfile=path, tofile=path, lineterm='')
-                            diff_str = "\n".join(diff)
-                        else:
-                            diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
+        # --- Tool rounds: run until the model answers in text ---
+        response, contents, chart_data_uri, proposal, rounds = _drive_tool_rounds(
+            response, contents, config, tool_map
+        )
+        if proposal:
+            return proposal
 
-                return {
-                    "tool_proposal": {
-                        "name": call.name,
-                        "args": call.args,
-                        "diff": diff_str
-                    }
-                }
-
-            # Non-mutating tools execute immediately
-            contents.append(response.candidates[0].content)
-            function_responses = []
-            chart_data_uri = None
-            for call in response.function_calls:
-                # Execute the python function mapped to the tool name
-                if call.name in tool_map:
-                    try:
-                        result = tool_map[call.name](**call.args)
-                    except TypeError as e:
-                        result = f"Argument Error: {e}"
-                    except Exception as e:
-                        result = f"Python Execution Error: {e}"
-                else:
-                    result = f"Error: Tool {call.name} not recognized."
-
-                if call.name == "inline_chart" and isinstance(result, str) and result.startswith("data:image"):
-                    chart_data_uri = result
-                    function_responses.append(
-                        types.Part.from_function_response(
-                            name=call.name,
-                            response={"result": "Chart generated and sent to user successfully."}
-                        )
-                    )
-                else:
-                    function_responses.append(
-                        types.Part.from_function_response(
-                            name=call.name,
-                            response={"result": result}
-                        )
-                    )
-
-            # Append the function responses as the user's reply
-            contents.append(
-                types.Content(
-                    role="user",
-                    parts=function_responses
-                )
-            )
-
-            # Call Gemini a second time to generate the final text answer
-            response = _client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=contents,
-                config=config,
-            )
-        else:
-            # Check for hallucinated execution
+        if rounds == 0:
+            # No tool ran, so check the model did not merely claim it had.
             err = _check_hallucination(cleaned_message, response.text, "gemini")
             if err:
                 return err
+
 
         # Update telemetry
         if response.usage_metadata:
@@ -721,9 +775,22 @@ def chat(user_message: str) -> str:
         _chat_history.append(model_content)
         _save_content(model_content)
 
-        if 'chart_data_uri' in locals() and chart_data_uri:
-            return {"chart": chart_data_uri, "text": response.text}
-        return response.text
+        # response.text is None when the final turn carried no text part — a
+        # safety block, an empty candidate, or a model still trying to call
+        # tools after the budget ran out. Never hand None back to the caller.
+        answer = response.text or ""
+        if not answer.strip():
+            if rounds >= MAX_TOOL_ROUNDS:
+                answer = (
+                    f"I stopped after {MAX_TOOL_ROUNDS} tool steps without reaching an "
+                    "answer. Try narrowing the request or asking for one step at a time."
+                )
+            else:
+                answer = "I wasn't able to produce an answer for that. Please try rephrasing."
+
+        if chart_data_uri:
+            return {"chart": chart_data_uri, "text": answer}
+        return answer
 
     except (errors.APIError, httpx.TimeoutException, httpx.TransportError) as e:
         # Gemini is genuinely unreachable or refused the request: fall back.
@@ -929,50 +996,26 @@ def chat_stream(user_message: str):
         if accumulated_function_calls:
             call = accumulated_function_calls[0]
 
-            if call.name in ["rename_file", "delete_file", "write_file"]:
-                # Mutating tool — pause for confirmation
-                global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map
+            # Rebuild the model turn from the streamed pieces.
+            model_parts = []
+            if accumulated_text:
+                model_parts.append(types.Part.from_text(text=accumulated_text))
+            for fc in accumulated_function_calls:
+                model_parts.append(types.Part.from_function_call(name=fc.name, args=fc.args))
+            model_content = types.Content(role="model", parts=model_parts)
 
-                # Build the model content from accumulated stream
-                model_parts = []
-                if accumulated_text:
-                    model_parts.append(types.Part.from_text(text=accumulated_text))
-                for fc in accumulated_function_calls:
-                    model_parts.append(types.Part.from_function_call(
-                        name=fc.name, args=fc.args
-                    ))
-                model_content = types.Content(role="model", parts=model_parts)
+            if call.name in MUTATING_TOOLS:
+                # Mutating tool — pause for confirmation.
+                global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map
+                global _pending_rounds_used
 
                 _pending_session = contents.copy()
                 _pending_session.append(model_content)
                 _pending_tool_calls = accumulated_function_calls
                 _pending_config = config
                 _pending_tool_map = tool_map
+                _pending_rounds_used = 0
 
-                # Generate diff string
-                diff_str = ""
-                if call.name == "delete_file":
-                    diff_str = f"- {call.args['path']}"
-                elif call.name == "rename_file":
-                    diff_str = f"- {call.args['source']}\n+ {call.args['destination']}"
-                elif call.name == "write_file":
-                    import os as _os
-                    mode = call.args.get("mode", "overwrite")
-                    content = call.args.get("content", "")
-                    if mode == "append":
-                        diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
-                    else:
-                        path = call.args['path']
-                        if _os.path.exists(path):
-                            with open(path, 'r', encoding='utf-8') as f:
-                                old_lines = f.readlines()
-                            new_lines = [line + '\n' if not line.endswith('\n') else line for line in content.splitlines()]
-                            diff = difflib.unified_diff(old_lines, new_lines, fromfile=path, tofile=path, lineterm='')
-                            diff_str = "\n".join(diff)
-                        else:
-                            diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
-
-                # Save the model content to history
                 _chat_history = contents.copy()
                 _chat_history.append(model_content)
                 _save_content(model_content)
@@ -980,57 +1023,33 @@ def chat_stream(user_message: str):
                 yield {"type": "tool_proposal", "proposal": {
                     "name": call.name,
                     "args": call.args,
-                    "diff": diff_str
+                    "diff": _build_tool_diff(call),
                 }}
                 return  # Stop the generator — tool needs confirmation
 
-            # Non-mutating tools — execute immediately
-            model_parts = []
-            if accumulated_text:
-                model_parts.append(types.Part.from_text(text=accumulated_text))
-            for fc in accumulated_function_calls:
-                model_parts.append(types.Part.from_function_call(
-                    name=fc.name, args=fc.args
-                ))
-            model_content = types.Content(role="model", parts=model_parts)
+            # Non-mutating tools execute immediately, then the loop continues so
+            # the model can act on what came back rather than being cut off.
             contents.append(model_content)
+            parts, chart = _execute_tool_calls(accumulated_function_calls, tool_map)
+            if chart:
+                yield {"type": "chart", "data_uri": chart}
+            contents.append(types.Content(role="user", parts=parts))
 
-            function_responses = []
-            for fc in accumulated_function_calls:
-                if fc.name in tool_map:
-                    try:
-                        result = tool_map[fc.name](**fc.args)
-                    except TypeError as e:
-                        result = f"Argument Error: {e}"
-                    except Exception as e:
-                        result = f"Python Execution Error: {e}"
-                else:
-                    result = f"Error: Tool {fc.name} not recognized."
-                
-                if fc.name == "inline_chart" and isinstance(result, str) and result.startswith("data:image"):
-                    yield {"type": "chart", "data_uri": result}
-                    function_responses.append(
-                        types.Part.from_function_response(
-                            name=fc.name,
-                            response={"result": "Chart generated and sent to user successfully."}
-                        )
-                    )
-                else:
-                    function_responses.append(
-                        types.Part.from_function_response(
-                            name=fc.name,
-                            response={"result": result}
-                        )
-                    )
-
-            contents.append(types.Content(role="user", parts=function_responses))
-
-            # Follow-up call (non-streaming — tool results are short)
             followup = _client.models.generate_content(
                 model=GEMINI_MODEL,
                 contents=contents,
                 config=config,
             )
+
+            followup, contents, later_chart, proposal, _ = _drive_tool_rounds(
+                followup, contents, config, tool_map, rounds=1
+            )
+            if later_chart:
+                yield {"type": "chart", "data_uri": later_chart}
+            if proposal:
+                yield {"type": "tool_proposal", "proposal": proposal["tool_proposal"]}
+                return
+
 
             followup_text = followup.text or ""
             if followup_text:
@@ -1181,7 +1200,7 @@ def handle_tool_response(accept: bool) -> dict | str:
 
 
     # --- Gemini Path ---
-    global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map, _chat_history
+    global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map, _chat_history, _pending_rounds_used
     if not _pending_session or not _pending_tool_calls:
         return "Error: No pending tool call found."
 
@@ -1222,13 +1241,29 @@ def handle_tool_response(accept: bool) -> dict | str:
     _save_content(user_tool_content)
 
     try:
+        session = _pending_session
+        config = _pending_config
+        tool_map = _pending_tool_map
+        rounds_used = _pending_rounds_used
+
         response = _client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=_pending_session,
-            config=_pending_config,
+            contents=session,
+            config=config,
         )
         active_engine = "gemini"
-        
+
+        # Resume the tool loop with the budget the paused turn had left, so a
+        # confirmed tool can be followed by further steps instead of ending the
+        # turn at whatever the model happened to say next.
+        response, session, chart_data_uri, proposal, _ = _drive_tool_rounds(
+            response, session, config, tool_map, rounds_used
+        )
+        if proposal:
+            # Another mutating tool needs confirmation; _drive_tool_rounds has
+            # already re-armed the pending state, so leave it in place.
+            return proposal
+
         # Update telemetry
         if response.usage_metadata:
             global last_token_counts
@@ -1238,7 +1273,7 @@ def handle_tool_response(accept: bool) -> dict | str:
                 "total": response.usage_metadata.total_token_count
             }
 
-        _chat_history = _pending_session.copy()
+        _chat_history = session.copy()
         model_content = response.candidates[0].content
         _chat_history.append(model_content)
         _save_content(model_content)
@@ -1248,7 +1283,12 @@ def handle_tool_response(accept: bool) -> dict | str:
         _pending_tool_calls = None
         _pending_config = None
         _pending_tool_map = None
-        return response.text
+        _pending_rounds_used = 0
+
+        answer = response.text or "Done."
+        if chart_data_uri:
+            return {"chart": chart_data_uri, "text": answer}
+        return answer
     except Exception as e:
         _pending_session = None
         return f"Error continuing conversation: {str(e)}"
