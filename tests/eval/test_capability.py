@@ -39,6 +39,10 @@ def _evaluate(case, outcome):
             if not predicate(args):
                 return f"{expected_tool} called with unusable args: {args}"
 
+    missing = [t for t in case.get("expect_all_tools", []) if t not in tool_names]
+    if missing:
+        return f"never called {', '.join(missing)}; called {tool_names or 'nothing'}"
+
     if case.get("expect_no_tool") and tool_names:
         return f"expected no tool call, got {tool_names}"
 

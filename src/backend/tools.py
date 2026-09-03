@@ -33,6 +33,19 @@ PROTECTED_PATHS = [
 ]
 
 
+# Paths refused as targets in their own right, while everything *inside* them
+# stays workable -- unlike PROTECTED_PATHS, which blocks the whole subtree.
+PROTECTED_EXACT = {
+    os.path.normcase(os.path.realpath(os.path.expanduser("~"))),
+    os.path.normcase(os.path.join(os.environ.get("SYSTEMDRIVE", "C:") + os.sep, "Users")),
+}
+
+
+def _is_filesystem_root(real_path: str) -> bool:
+    """True for a drive root (C:\\) or POSIX /, where dirname is a fixed point."""
+    return os.path.dirname(real_path) == real_path
+
+
 def _validate_path(path: str, label: str = "path") -> str | None:
     """Validates and normalizes a file path.
 
@@ -45,6 +58,22 @@ def _validate_path(path: str, label: str = "path") -> str | None:
         return f"ERROR: {label} contains invalid null bytes."
 
     real = os.path.normcase(os.path.realpath(path))
+
+    # The confirmation prompt is not adequate protection here. A capability run
+    # against llama3.2 asked it to *scan and list* the C: drive and it proposed
+    # delete_file(path="C:\\"); the only thing standing between that and an
+    # unrecoverable mistake was the user reading the dialog. Refuse outright.
+    if _is_filesystem_root(real):
+        return (
+            f"ERROR: Refusing to operate on the filesystem root ({path}). "
+            "Name a specific file or folder inside it."
+        )
+    if real in PROTECTED_EXACT:
+        return (
+            f"ERROR: Refusing to operate on {path} itself. "
+            "Work on files inside it instead."
+        )
+
     for protected in PROTECTED_PATHS:
         if real.startswith(protected):
             return f"ERROR: Refusing to modify protected system path: {path}"
