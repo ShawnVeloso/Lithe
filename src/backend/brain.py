@@ -725,11 +725,13 @@ def chat(user_message: str) -> str:
             return {"chart": chart_data_uri, "text": response.text}
         return response.text
 
-    except (errors.APIError, httpx.TimeoutException, Exception) as e:
+    except (errors.APIError, httpx.TimeoutException, httpx.TransportError) as e:
+        # Gemini is genuinely unreachable or refused the request: fall back.
         active_engine = "ollama"
-        error_name = type(e).__name__
-        print(f"[Lithe] Gemini connection failed ({error_name}): {e}")
-        print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
+        logger.warning(
+            "Gemini unavailable (%s): %s — falling back to Ollama (%s @ %s)",
+            type(e).__name__, e, OLLAMA_MODEL, OLLAMA_URL,
+        )
         ollama_response = _ollama_chat(system_prompt, cleaned_message, tool_map)
         
         if isinstance(ollama_response, dict) and "tool_proposal" in ollama_response:
@@ -746,6 +748,18 @@ def chat(user_message: str) -> str:
         _chat_history.append(model_content)
         _save_content(model_content)
         return ollama_response
+
+    except Exception as e:
+        # Anything else is a defect in Lithe, not a connectivity problem. The
+        # old handler caught bare Exception and rerouted to Ollama, so a KeyError
+        # on a missing tool argument, a UnicodeDecodeError in the diff builder or
+        # an IndexError on a blocked response all reported as "Gemini connection
+        # failed" and silently switched engines. Surface it instead.
+        logger.exception("Internal error while handling a chat turn: %s", e)
+        return (
+            f"Internal error in Lithe ({type(e).__name__}: {e}). "
+            "This is a bug rather than a connection problem — see backend.log."
+        )
 
 
 def chat_stream(user_message: str):
@@ -1066,11 +1080,13 @@ def chat_stream(user_message: str):
 
         yield {"type": "done", "tokens": last_token_counts}
 
-    except (errors.APIError, httpx.TimeoutException, Exception) as e:
+    except (errors.APIError, httpx.TimeoutException, httpx.TransportError) as e:
+        # Gemini is genuinely unreachable or refused the request: fall back.
         active_engine = "ollama"
-        error_name = type(e).__name__
-        print(f"[Lithe] Gemini streaming failed ({error_name}): {e}")
-        print(f"[Lithe] Routing prompt to local Ollama fallback ({OLLAMA_MODEL} @ {OLLAMA_URL})...")
+        logger.warning(
+            "Gemini streaming unavailable (%s): %s — falling back to Ollama (%s @ %s)",
+            type(e).__name__, e, OLLAMA_MODEL, OLLAMA_URL,
+        )
         ollama_response = _ollama_chat(system_prompt, cleaned_message, tool_map)
         
         if isinstance(ollama_response, dict) and "tool_proposal" in ollama_response:
@@ -1089,6 +1105,19 @@ def chat_stream(user_message: str):
         _save_content(model_content)
         # Yield entire Ollama response as a single token chunk
         yield {"type": "token", "content": ollama_response}
+        yield {"type": "done", "tokens": last_token_counts}
+
+    except Exception as e:
+        # See the matching branch in chat(): a defect must not masquerade as a
+        # connection failure and silently change engines.
+        logger.exception("Internal error while streaming a chat turn: %s", e)
+        yield {
+            "type": "token",
+            "content": (
+                f"Internal error in Lithe ({type(e).__name__}: {e}). "
+                "This is a bug rather than a connection problem — see backend.log."
+            ),
+        }
         yield {"type": "done", "tokens": last_token_counts}
 
 
