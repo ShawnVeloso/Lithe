@@ -27,7 +27,17 @@ from src.backend.prompts.system_prompt import (
     COMPLIANT_SYSTEM_PROMPT,
     detect_safeword,
 )
-from src.backend.retrieval import get_file_contexts, read_file_securely, MAX_FILE_SIZE_BYTES
+from src.backend.retrieval import (
+    get_file_context_blocks,
+    read_file_securely,
+    MAX_FILE_SIZE_BYTES,
+)
+from src.backend.context_budget import (
+    MAX_HISTORY_MESSAGES,
+    drop_orphan_prefix,
+    trim_blocks,
+    trim_history,
+)
 from src.backend.tools import execute_rename, execute_delete, execute_write, execute_read
 from src.backend.memory import search_files_by_name, record_action, insert_auto_summary
 from src.backend.data_tools import profile_data as _profile_data, inline_chart as _inline_chart
@@ -57,6 +67,14 @@ _pending_ollama_tool_map = None
 _chat_history: list[types.Content] = []
 _current_conversation_id: str | None = None
 
+# Retrieved file content for the current conversation, deliberately kept OUT
+# of _chat_history. F-04 used to append it to the user's message, which was
+# then persisted and replayed on every later turn -- three named files meant
+# ~300KB welded onto every request for the life of the conversation. Held here
+# as (path, block) pairs instead, re-sent from a bounded cache each turn so a
+# follow-up question still sees the file while the transcript stays small.
+_context_blocks: list[tuple[str, str]] = []
+
 # Global state for telemetry
 last_token_counts = {"prompt": 0, "candidates": 0, "total": 0}
 active_engine = "gemini"
@@ -80,8 +98,12 @@ from src.backend.memory import save_message, get_chat_history, get_latest_conver
 def _load_history():
     global _chat_history
     global _current_conversation_id
+    global _context_blocks
 
     _chat_history.clear()
+    # Retrieved file content is per-session and never persisted, so a reload
+    # must start with none of it rather than the previous conversation's.
+    _context_blocks = []
 
     # Prefer the explicit active-conversation pointer (set by new_conversation);
     # fall back to the latest message's conversation for pre-existing databases.
@@ -91,25 +113,41 @@ def _load_history():
         set_app_state("active_conversation_id", _current_conversation_id)
         return
 
-    for row in get_chat_history(_current_conversation_id):
+    rows = get_chat_history(_current_conversation_id)
+    if len(rows) > MAX_HISTORY_MESSAGES:
+        # A long transcript would be trimmed away at request time anyway, so
+        # rebuilding Content objects for all of it is wasted startup work.
+        rows = rows[-MAX_HISTORY_MESSAGES:]
+
+    for row in rows:
         parts = []
         if row["content"]:
             parts.append(types.Part.from_text(text=row["content"]))
         if row["tool_proposal_json"]:
-            call_data = json.loads(row["tool_proposal_json"])
-            parts.append(types.Part.from_function_call(name=call_data["name"], args=call_data["args"]))
+            for call_data in _as_list(json.loads(row["tool_proposal_json"])):
+                parts.append(types.Part.from_function_call(
+                    name=call_data["name"], args=call_data["args"]
+                ))
         if row["tool_resolution"]:
-            res_data = json.loads(row["tool_resolution"])
-            parts.append(types.Part.from_function_response(name=res_data["name"], response=res_data["response"]))
+            for res_data in _as_list(json.loads(row["tool_resolution"])):
+                parts.append(types.Part.from_function_response(
+                    name=res_data["name"], response=res_data["response"]
+                ))
         
         if parts:
             _chat_history.append(types.Content(role=row["role"], parts=parts))
+
+    # Slicing to the newest N rows can cut into a tool exchange, leaving a
+    # function_response with no matching call -- which Gemini rejects outright.
+    _chat_history[:] = drop_orphan_prefix(_chat_history)
 
 def new_conversation() -> str:
     """Starts a new conversation by resetting the global state."""
     global _chat_history
     global _current_conversation_id
+    global _context_blocks
     _chat_history.clear()
+    _context_blocks = []
     _current_conversation_id = str(uuid.uuid4())
     set_app_state("active_conversation_id", _current_conversation_id)
     return _current_conversation_id
@@ -124,21 +162,47 @@ def switch_conversation(conversation_id: str) -> str:
     _load_history()
     return _current_conversation_id
 
+def _as_list(decoded):
+    """Rows written before parallel calls were stored hold a bare object."""
+    return decoded if isinstance(decoded, list) else [decoded]
+
+
 def _save_content(content_obj: types.Content):
+    """Persist one turn, keeping every function call and response it carries.
+
+    A model may emit several function calls in one turn. This used to assign
+    rather than accumulate, so only the last survived: a turn with two calls
+    reloaded with one call and one response, which is not a valid payload.
+    Stored as a JSON list now; _as_list keeps existing single-object rows
+    readable.
+    """
     try:
         content_text = ""
-        tool_proposal_json = None
-        tool_resolution = None
+        calls = []
+        resolutions = []
         for part in content_obj.parts:
             if part.text:
                 content_text += part.text
             elif part.function_call:
-                tool_proposal_json = json.dumps({"name": part.function_call.name, "args": part.function_call.args})
+                calls.append({
+                    "name": part.function_call.name,
+                    "args": dict(part.function_call.args or {}),
+                })
             elif part.function_response:
-                tool_resolution = json.dumps({"name": part.function_response.name, "response": part.function_response.response})
-        save_message(str(uuid.uuid4()), _current_conversation_id, content_obj.role, content_text, tool_proposal_json, tool_resolution)
-    except Exception as e:
-        print(f"Error saving chat history: {e}")
+                resolutions.append({
+                    "name": part.function_response.name,
+                    "response": part.function_response.response,
+                })
+        save_message(
+            str(uuid.uuid4()),
+            _current_conversation_id,
+            content_obj.role,
+            content_text,
+            json.dumps(calls) if calls else None,
+            json.dumps(resolutions) if resolutions else None,
+        )
+    except Exception:
+        logger.exception("Error saving chat history")
 
 try:
     _load_history()
@@ -476,6 +540,83 @@ def _check_hallucination(user_message: str, response_text: str, engine: str = "g
 
 
 
+def _apply_file_context(system_prompt: str, cleaned_message: str) -> str:
+    """Attach retrieved file content to the system prompt for this request.
+
+    F-04 used to do ``cleaned_message += file_context``, so up to 100KB per
+    named file became part of the user turn -- persisted to SQLite, reloaded at
+    startup and re-sent on every subsequent request forever. Putting it in the
+    system instruction instead means it is never written to the transcript at
+    all, and is re-supplied each turn from a budgeted cache so that a follow-up
+    like "now list its columns" still sees the file it refers to.
+
+    Also stops file *content* being fed to _check_hallucination, which keyword-
+    matches the user's message: a CSV containing the word "delete" could
+    previously trip the mutating-intent guard.
+    """
+    global _context_blocks
+    blocks, note = get_file_context_blocks(cleaned_message)
+
+    # Re-appending a file already in the cache refreshes both its content and
+    # its position, so the file under discussion is the last one evicted.
+    for path, text in blocks:
+        _context_blocks = [(p, t) for p, t in _context_blocks if p != path]
+        _context_blocks.append((path, text))
+    _context_blocks = trim_blocks(_context_blocks)
+
+    sections = [system_prompt]
+    if _context_blocks:
+        sections.append("\n\n".join(text for _, text in _context_blocks))
+    if note:
+        # Deliberately not cached: "that file is not indexed" is a statement
+        # about this turn's request, not a standing fact about the session.
+        sections.append(note.strip())
+    return "\n\n".join(sections)
+
+
+def _abandon_pending_proposal():
+    """Close out a tool proposal the user walked away from.
+
+    Proposing a mutating tool puts a function_call in the transcript. If the
+    next thing to happen is an ordinary message rather than a confirmation,
+    that call never receives its response and the conversation carries a
+    dangling call from then on. Answering it explicitly keeps the transcript
+    valid and tells the model the operation did not run -- which matters,
+    because otherwise it has no way to know whether the file was deleted.
+    """
+    global _pending_session, _pending_tool_calls, _pending_config
+    global _pending_tool_map, _pending_rounds_used
+
+    if not _pending_tool_calls:
+        return
+
+    logger.info(
+        "Superseding an unconfirmed %s proposal; a new message arrived first.",
+        _pending_tool_calls[0].name,
+    )
+    content = types.Content(
+        role="user",
+        parts=[
+            types.Part.from_function_response(
+                name=call.name,
+                response={"result": (
+                    "NOT EXECUTED: the user sent another message instead of "
+                    "confirming, so this operation was cancelled."
+                )},
+            )
+            for call in _pending_tool_calls
+        ],
+    )
+    _chat_history.append(content)
+    _save_content(content)
+
+    _pending_session = None
+    _pending_tool_calls = None
+    _pending_config = None
+    _pending_tool_map = None
+    _pending_rounds_used = 0
+
+
 # Tools that change the filesystem always pause for explicit user confirmation.
 MUTATING_TOOLS = ("rename_file", "delete_file", "write_file")
 
@@ -566,11 +707,29 @@ def _drive_tool_rounds(response, contents, config, tool_map, rounds: int = 0):
 
     chart_data_uri = None
 
+    def record(content):
+        """Add a turn to the request payload, the transcript and the DB at once.
+
+        The callers used to resync with ``_chat_history = contents.copy()``
+        after the fact. That silently discarded any history the request-time
+        trim had left out, and it never wrote the intra-turn tool traffic to
+        SQLite -- so a reload produced a function_response with no matching
+        call, which Gemini rejects. Appending in one place keeps the three
+        views consistent by construction.
+        """
+        contents.append(content)
+        _chat_history.append(content)
+        _save_content(content)
+
     while response.function_calls:
         call = response.function_calls[0]
 
         if call.name in MUTATING_TOOLS:
             _pending_session = contents.copy()
+            # record() rather than a bare append: the proposal is a real turn,
+            # and if it is not persisted the function_response saved on
+            # confirmation reloads as an orphan.
+            record(response.candidates[0].content)
             _pending_session.append(response.candidates[0].content)
             _pending_tool_calls = response.function_calls
             _pending_config = config
@@ -598,11 +757,11 @@ def _drive_tool_rounds(response, contents, config, tool_map, rounds: int = 0):
             break
 
         rounds += 1
-        contents.append(response.candidates[0].content)
+        record(response.candidates[0].content)
         parts, chart = _execute_tool_calls(response.function_calls, tool_map)
         if chart:
             chart_data_uri = chart
-        contents.append(types.Content(role="user", parts=parts))
+        record(types.Content(role="user", parts=parts))
         response = _client.models.generate_content(
             model=GEMINI_MODEL, contents=contents, config=config
         )
@@ -629,13 +788,13 @@ def chat(user_message: str) -> str:
     if session_safeword_active:
         safeword_active = True
 
-    # --- F-04: Inject File Context ---
-    file_context = get_file_contexts(cleaned_message)
-    if file_context:
-        cleaned_message += file_context
+    # A proposal left unconfirmed would otherwise dangle in the transcript.
+    _abandon_pending_proposal()
 
-    system_prompt = (
-        COMPLIANT_SYSTEM_PROMPT if safeword_active else CANDID_SYSTEM_PROMPT
+    # --- F-04: Inject File Context (into the system prompt, not the turn) ---
+    system_prompt = _apply_file_context(
+        COMPLIANT_SYSTEM_PROMPT if safeword_active else CANDID_SYSTEM_PROMPT,
+        cleaned_message,
     )
 
     # --- F-05: Dynamic Tool Wrappers ---
@@ -766,7 +925,9 @@ def chat(user_message: str) -> str:
     )
     _chat_history.append(user_content)
     _save_content(user_content)
-    contents = _chat_history.copy()
+    # A trimmed *view* of the transcript: _chat_history stays whole in
+    # memory, but an old conversation is not re-sent in full every turn.
+    contents = trim_history(_chat_history)
 
     # --- Call Gemini ---
     try:
@@ -801,7 +962,9 @@ def chat(user_message: str) -> str:
                 "total": response.usage_metadata.total_token_count
             }
 
-        _chat_history = contents.copy()
+        # No resync from `contents` here: _drive_tool_rounds already appended
+        # every intra-turn message to _chat_history. Copying the payload back
+        # would delete whatever the request-time trim had left out.
         model_content = response.candidates[0].content
         _chat_history.append(model_content)
         _save_content(model_content)
@@ -877,13 +1040,13 @@ def chat_stream(user_message: str):
     if session_safeword_active:
         safeword_active = True
 
-    # --- F-04: Inject File Context ---
-    file_context = get_file_contexts(cleaned_message)
-    if file_context:
-        cleaned_message += file_context
+    # A proposal left unconfirmed would otherwise dangle in the transcript.
+    _abandon_pending_proposal()
 
-    system_prompt = (
-        COMPLIANT_SYSTEM_PROMPT if safeword_active else CANDID_SYSTEM_PROMPT
+    # --- F-04: Inject File Context (into the system prompt, not the turn) ---
+    system_prompt = _apply_file_context(
+        COMPLIANT_SYSTEM_PROMPT if safeword_active else CANDID_SYSTEM_PROMPT,
+        cleaned_message,
     )
 
     # --- F-05: Dynamic Tool Wrappers (same as chat()) ---
@@ -1014,7 +1177,9 @@ def chat_stream(user_message: str):
     )
     _chat_history.append(user_content)
     _save_content(user_content)
-    contents = _chat_history.copy()
+    # A trimmed *view* of the transcript: _chat_history stays whole in
+    # memory, but an old conversation is not re-sent in full every turn.
+    contents = trim_history(_chat_history)
 
     try:
         global active_engine
@@ -1064,7 +1229,6 @@ def chat_stream(user_message: str):
                 _pending_tool_map = tool_map
                 _pending_rounds_used = 0
 
-                _chat_history = contents.copy()
                 _chat_history.append(model_content)
                 _save_content(model_content)
 
@@ -1078,10 +1242,15 @@ def chat_stream(user_message: str):
             # Non-mutating tools execute immediately, then the loop continues so
             # the model can act on what came back rather than being cut off.
             contents.append(model_content)
+            _chat_history.append(model_content)
+            _save_content(model_content)
             parts, chart = _execute_tool_calls(accumulated_function_calls, tool_map)
             if chart:
                 yield {"type": "chart", "data_uri": chart}
-            contents.append(types.Content(role="user", parts=parts))
+            tool_result_content = types.Content(role="user", parts=parts)
+            contents.append(tool_result_content)
+            _chat_history.append(tool_result_content)
+            _save_content(tool_result_content)
 
             followup = _client.models.generate_content(
                 model=GEMINI_MODEL,
@@ -1113,7 +1282,6 @@ def chat_stream(user_message: str):
                     "total": followup.usage_metadata.total_token_count
                 }
 
-            _chat_history = contents.copy()
             full_model = types.Content(
                 role="model",
                 parts=[types.Part.from_text(text=followup_text)]
@@ -1141,7 +1309,6 @@ def chat_stream(user_message: str):
             role="model",
             parts=[types.Part.from_text(text=accumulated_text)]
         )
-        _chat_history = contents.copy()
         _chat_history.append(model_content)
         _save_content(model_content)
 
@@ -1286,6 +1453,7 @@ def handle_tool_response(accept: bool) -> dict | str:
         parts=function_responses
     )
     _pending_session.append(user_tool_content)
+    _chat_history.append(user_tool_content)
     _save_content(user_tool_content)
 
     try:
@@ -1321,7 +1489,9 @@ def handle_tool_response(accept: bool) -> dict | str:
                 "total": response.usage_metadata.total_token_count
             }
 
-        _chat_history = session.copy()
+        # As in chat(): the resumed rounds already recorded themselves, and
+        # `session` is only the request payload -- copying it back over the
+        # transcript would drop anything the trim had excluded.
         model_content = response.candidates[0].content
         _chat_history.append(model_content)
         _save_content(model_content)

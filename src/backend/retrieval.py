@@ -48,35 +48,56 @@ def read_file_securely(filepath: str) -> Tuple[str, bool]:
         return f"[Error reading file: {str(e)}]", False
 
 
-def get_file_contexts(user_message: str) -> str:
-    """
-    Main entrypoint for F-04.
-    Finds files mentioned in the prompt, reads them, and formats a context block.
+def get_file_context_blocks(user_message: str) -> Tuple[List[Tuple[str, str]], str]:
+    """Resolve files named in the prompt into individually addressable blocks.
+
+    Returns ``(blocks, note)`` where ``blocks`` is a list of ``(path, text)``
+    pairs and ``note`` is a system note naming files that were mentioned but
+    are not in the index (empty when there are none).
+
+    The caller needs the blocks separately rather than pre-joined into one
+    string so it can cache them per file and evict them individually under a
+    budget. Before this existed the joined string was glued onto the user's
+    message and persisted with it, which is what let file context grow without
+    limit -- see context_budget.
     """
     filenames = extract_filenames(user_message)
     if not filenames:
-        return ""
+        return [], ""
 
     file_paths = find_file_paths(filenames)
     if not file_paths:
         # We detected filenames, but they aren't indexed.
         # Add a system note so the LLM knows we couldn't find them.
         missing = ", ".join(filenames)
-        return f"\n\n[System Note: The following files were mentioned but not found in the indexed directories: {missing}]"
+        return [], (
+            "\n\n[System Note: The following files were mentioned but not found "
+            f"in the indexed directories: {missing}]"
+        )
 
-    context_blocks = []
-    
+    blocks = []
     for path in file_paths:
         filename = os.path.basename(path)
         content, _ = read_file_securely(path)
-        
+
         block = f"--- LOCAL FILE CONTEXT: {filename} ---\n"
         block += f"Filepath: {path}\n"
         block += f"{content}\n"
         block += "-" * 40
-        context_blocks.append(block)
+        blocks.append((path, block))
 
-    if not context_blocks:
+    return blocks, ""
+
+
+def get_file_contexts(user_message: str) -> str:
+    """
+    Main entrypoint for F-04.
+    Finds files mentioned in the prompt, reads them, and formats a context block.
+    """
+    blocks, note = get_file_context_blocks(user_message)
+    if note:
+        return note
+    if not blocks:
         return ""
 
-    return "\n\n" + "\n\n".join(context_blocks)
+    return "\n\n" + "\n\n".join(text for _, text in blocks)
