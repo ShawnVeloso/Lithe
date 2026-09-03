@@ -61,32 +61,18 @@ def _as_the_model_would_call_it(declared: set, intended: str) -> str:
 # Tool declaration vs dispatch
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B2: closures are named *_wrapper, so the SDK declares "
-           "profile_data_wrapper etc. while tool_map is keyed profile_data",
-)
 def test_declared_tool_names_match_dispatch_map(isolated_db, scripted_gemini):
     client = scripted_gemini([text_response("hi")])
     brain.chat("hello")
     assert client.declared_tool_names() == EXPECTED_TOOL_NAMES
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B2: same *_wrapper mismatch in the streaming path",
-)
 def test_declared_tool_names_match_dispatch_map_streaming(isolated_db, scripted_gemini):
     client = scripted_gemini([text_response("hi")])
     _drain(brain.chat_stream("hello"))
     assert client.declared_tool_names() == EXPECTED_TOOL_NAMES
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B2: Ollama schema uses the correct names, Gemini declares *_wrapper, "
-           "so the two engines expose different tools",
-)
 def test_ollama_schema_matches_gemini_declarations(isolated_db, scripted_gemini):
     """The two providers must offer the model the same tool vocabulary.
 
@@ -103,10 +89,6 @@ def test_ollama_schema_matches_gemini_declarations(isolated_db, scripted_gemini)
 # Dispatch actually reaching the implementation
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B2: dispatch misses, model is told 'Tool profile_data_wrapper not recognized'",
-)
 def test_profile_data_call_is_dispatched(isolated_db, scripted_gemini):
     declared = _probe_declared_names(scripted_gemini)
     called_as = _as_the_model_would_call_it(declared, "profile_data")
@@ -122,10 +104,6 @@ def test_profile_data_call_is_dispatched(isolated_db, scripted_gemini):
     assert "not recognized" not in fed_back
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B2: dispatch misses for all three watch-rule tools",
-)
 @pytest.mark.parametrize("tool_name,args", [
     ("list_watch_rules", {}),
     ("create_watch_rule", {"directory": "C:\\nope", "pattern": "*.csv"}),
