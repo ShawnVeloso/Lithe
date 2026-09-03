@@ -115,15 +115,15 @@ def test_search_files_cannot_see_file_contents(indexed_workspace):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B4: search_files' docstring tells the model it finds files that "
-           "CONTAIN a word, but it only matches filenames",
-)
 def test_search_files_description_does_not_promise_content_search(
     isolated_db, scripted_gemini
 ):
-    """A tool description that overpromises causes confident wrong answers."""
+    """A tool description that overpromises causes confident wrong answers.
+
+    The original text instructed the model to call search_files "whenever the
+    user asks which files contain a word" — something it structurally cannot
+    do, since the index holds no file contents.
+    """
     client = scripted_gemini([text_response("hi")])
     brain.chat("hello")
 
@@ -131,6 +131,14 @@ def test_search_files_description_does_not_promise_content_search(
     search_tool = next(t for t in tools if t.__name__ == "search_files")
     doc = (search_tool.__doc__ or "").lower()
 
-    assert "contain" not in doc, (
-        "search_files claims to find files containing a word; it matches names only"
+    assert "which files contain" not in doc, (
+        "search_files still claims to find files by their contents"
     )
+    assert "filename" in doc, "search_files should say it matches filenames only"
+
+
+def test_read_file_tool_is_offered_alongside_search(isolated_db, scripted_gemini):
+    """Locating a file is only useful if the model can then read it."""
+    client = scripted_gemini([text_response("hi")])
+    brain.chat("hello")
+    assert "read_file" in client.declared_tool_names()

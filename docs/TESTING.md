@@ -87,6 +87,20 @@ LITHE_EVAL=1 LITHE_EVAL_REPEATS=1 python -m pytest -m eval    # quicker, noisier
 Requires `LITHE_EVAL=1` *and* a configured `GEMINI_API_KEY`; otherwise every
 case skips. `addopts = -m "not eval"` keeps it out of normal runs entirely.
 
+### It costs real quota — budget for it
+
+A full run is roughly `cases × repeats` API calls: about **70 calls at the
+default 3 repeats**, and more when transport retries fire. On a free-tier key a
+couple of runs can exhaust the daily quota, after which everything fails with
+429 and the score collapses to 0% for reasons that have nothing to do with
+Lithe.
+
+A pre-flight check makes one cheap call before collecting and skips the whole
+suite with an explanatory message if the API is unusable (quota exhausted, 503
+overload). That turns a nine-minute run that burns fifty unusable calls into a
+four-second skip. Use `LITHE_EVAL_REPEATS=1` while iterating, and save the
+3-repeat run for an actual before/after comparison.
+
 It runs against a **synthetic corpus** built in a temp directory
 (`tests/eval/conftest.py::corpus`), never your real drive — a score is only
 comparable between runs if the inputs are identical. The corpus contains a CSV
