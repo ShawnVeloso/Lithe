@@ -214,6 +214,13 @@ async def switch_chat_endpoint(request: SwitchChatRequest):
     return {"status": "success", "conversation_id": switch_conversation(request.conversation_id)}
 
 
+def _first(decoded):
+    """The single entry the chat UI expects, from either storage shape."""
+    if isinstance(decoded, list):
+        return decoded[0] if decoded else None
+    return decoded
+
+
 @app.get("/api/chat/history")
 async def chat_history_endpoint(conversation_id: str | None = None):
     """Returns the persistent chat history for a conversation (active one by default)."""
@@ -234,11 +241,14 @@ async def chat_history_endpoint(conversation_id: str | None = None):
             "content": row["content"],
             "isAutoSummary": bool(row.get("is_auto_summary", 0))
         }
+        # brain stores these as JSON lists so a turn carrying several function
+        # calls survives a reload. The UI renders one proposal card per
+        # message, so hand it the first entry in the shape it has always
+        # expected -- and keep reading the older bare-object rows.
         if row["tool_proposal_json"]:
-            proposal = json.loads(row["tool_proposal_json"])
-            msg["tool_proposal"] = proposal
+            msg["tool_proposal"] = _first(json.loads(row["tool_proposal_json"]))
         if row["tool_resolution"]:
-            msg["tool_resolution"] = json.loads(row["tool_resolution"])
+            msg["tool_resolution"] = _first(json.loads(row["tool_resolution"]))
             
         formatted.append(msg)
         
