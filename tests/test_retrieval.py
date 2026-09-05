@@ -45,15 +45,34 @@ def test_unindexed_filename_produces_a_system_note(indexed_workspace):
     assert "nowhere.csv" in context
 
 
-def test_version_numbers_are_mistaken_for_filenames(indexed_workspace):
-    """extract_filenames matches any word.ext token, so prose trips it.
+@pytest.mark.parametrize(
+    "prose", ["I am on python 3.11 now", "upgrade to v2.0 please", "version 1.4.2 shipped"]
+)
+def test_version_numbers_are_not_mistaken_for_filenames(indexed_workspace, prose):
+    """A version number used to be looked up, and of course not found.
 
-    The consequence is a misleading "file not found" note glued onto an
-    otherwise ordinary question.
+    That glued a "not found in the indexed directories" note onto an ordinary
+    question, telling the model a file was missing that the user never
+    mentioned. An all-digit extension is the tell.
     """
-    assert "3.11" in extract_filenames("I am on python 3.11 now")
-    context = get_file_contexts("I am on python 3.11 now")
-    assert "not found in the indexed directories" in context
+    assert extract_filenames(prose) == []
+    assert get_file_contexts(prose) == ""
+
+
+@pytest.mark.parametrize("name", ["archive.7z", "song.mp3", "video.h264"])
+def test_extensions_may_still_contain_digits(indexed_workspace, name):
+    """Only an all-digit extension is rejected, so real names survive."""
+    assert extract_filenames(f"open {name}") == [name]
+
+
+def test_a_purely_numeric_extension_is_missed(indexed_workspace):
+    """The cost of the rule above, stated rather than hidden.
+
+    A file genuinely named `report.2024` will not be detected. Version numbers
+    in prose are far more common than filenames of that shape, so the trade is
+    deliberate.
+    """
+    assert extract_filenames("summarize report.2024") == []
 
 
 # ---------------------------------------------------------------------------

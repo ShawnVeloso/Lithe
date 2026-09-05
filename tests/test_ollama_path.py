@@ -349,3 +349,96 @@ def test_confirmation_clears_the_pending_state(isolated_db, ollama, tmp_path):
 
     assert brain._pending_ollama_tool_calls is None
     assert brain._pending_ollama_messages is None
+
+
+# ---------------------------------------------------------------------------
+# The hallucination guard must not eat correct answers
+# ---------------------------------------------------------------------------
+
+def test_a_real_search_result_is_not_flagged_as_a_hallucination(
+    isolated_db, ollama
+):
+    """The guard ran unconditionally here, so success looked like fabrication.
+
+    It keys on words like "found" and "located", which is exactly how a model
+    reports a search that really happened -- so a genuine search_files result
+    reached the user as "ERROR: ... failed to actually invoke the system
+    search tool".
+    """
+    ollama([
+        tool_call_message([("search_files", {"keyword": "sales"})]),
+        text_message("Found 1 file: sales_q3.csv"),
+    ])
+
+    answer = brain.chat("find files with 'sales' in the name")
+
+    assert "ERROR" not in str(answer), answer
+    assert "sales_q3.csv" in str(answer)
+
+
+def test_a_claimed_search_with_no_tool_call_is_still_flagged(isolated_db, ollama):
+    """Gating the guard must not disable it: this is what it exists for."""
+    ollama([text_message("Found 1 file: sales_q3.csv")])
+
+    answer = brain.chat("find files with 'sales' in the name")
+
+    assert "ERROR" in str(answer), answer
+
+
+# ---------------------------------------------------------------------------
+# Charts have to reach the user
+# ---------------------------------------------------------------------------
+
+def test_a_chart_is_delivered_and_not_merely_announced(
+    isolated_db, ollama, monkeypatch
+):
+    """The data URI was dropped while the model said it had been sent.
+
+    Lithe replaces the image with "Chart generated and sent to user
+    successfully" so a base64 blob does not sit in the transcript -- but it
+    then returned only the text, so the model truthfully relayed a delivery
+    that never happened.
+    """
+    monkeypatch.setattr(
+        brain, "_inline_chart", lambda *a, **k: "data:image/png;base64,CHARTDATA"
+    )
+    ollama([
+        tool_call_message([
+            ("inline_chart", {"file_path": "x.csv", "chart_type": "bar",
+                              "x_column": "a", "y_column": "b"}),
+        ]),
+        text_message("here is your chart"),
+    ])
+
+    result = brain.chat("chart revenue by month from x.csv")
+
+    assert isinstance(result, dict), f"the chart was dropped: {result!r}"
+    assert result["chart"] == "data:image/png;base64,CHARTDATA"
+    assert "here is your chart" in result["text"]
+
+
+def test_a_streamed_chart_is_yielded_as_its_own_event(
+    isolated_db, ollama, monkeypatch
+):
+    monkeypatch.setattr(
+        brain, "_inline_chart", lambda *a, **k: "data:image/png;base64,CHARTDATA"
+    )
+    ollama([
+        tool_call_message([
+            ("inline_chart", {"file_path": "x.csv", "chart_type": "bar",
+                              "x_column": "a", "y_column": "b"}),
+        ]),
+        text_message("here is your chart"),
+    ])
+
+    events = list(brain.chat_stream("chart revenue by month from x.csv"))
+
+    charts = [e for e in events if e.get("type") == "chart"]
+    assert charts, f"no chart event was emitted: {[e.get('type') for e in events]}"
+    assert charts[0]["data_uri"] == "data:image/png;base64,CHARTDATA"
+
+
+def test_a_turn_without_a_chart_returns_plain_text(isolated_db, ollama):
+    """The chart flag must not leak from one turn into the next."""
+    ollama([text_message("just words")])
+    assert brain.chat("say something") == "just words"

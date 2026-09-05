@@ -23,6 +23,15 @@ def extract_filenames(text: str) -> List[str]:
     # Assumes filename characters: alphanumerics, dashes, underscores
     pattern = r"\b[\w-]+\.[A-Za-z0-9]+\b"
     matches = re.findall(pattern, text)
+
+    # An all-digit extension is a version number, not a file: "python 3.11",
+    # "v2.0", "version 1.4". Those used to be looked up and, of course, not
+    # found, which glued a "not found in the indexed directories" note onto an
+    # ordinary question and told the model a file was missing that the user had
+    # never mentioned. Extensions keep their digits otherwise, so .7z and .mp3
+    # still resolve.
+    matches = [m for m in matches if not m.rsplit(".", 1)[1].isdigit()]
+
     # Return unique matches
     return list(set(matches))
 

@@ -80,6 +80,13 @@ _context_blocks: list[tuple[str, str]] = []
 last_token_counts = {"prompt": 0, "candidates": 0, "total": 0}
 active_engine = "gemini"
 
+# What the most recent Ollama turn produced, in the same module-global style as
+# last_token_counts. _ollama_chat returns only text (or a proposal), so without
+# this the caller cannot tell whether a tool ran -- which it must know for two
+# reasons: the hallucination guard is only meaningful when none did, and a
+# chart has to be handed to the UI rather than dropped.
+last_ollama_turn = {"rounds": 0, "chart": None}
+
 from src.backend.logger import logger
 
 # ---------------------------------------------------------------------------
@@ -467,6 +474,7 @@ def _ollama_drive_tool_rounds(messages, tool_map, rounds: int = 0):
             }
 
         rounds += 1
+        last_ollama_turn["rounds"] = rounds
         messages.append(message)
         _record_ollama_calls(calls)
 
@@ -488,8 +496,12 @@ def _ollama_drive_tool_rounds(messages, tool_map, rounds: int = 0):
                 and isinstance(result, str)
                 and result.startswith("data:image")
             ):
-                # As on the Gemini path: a base64 image in the transcript
-                # would be replayed on every later turn.
+                # The image goes to the caller and is replaced in the
+                # transcript, where a base64 blob would be replayed every
+                # turn. Keeping only the acknowledgement -- as this did before
+                # -- meant the model told the user a chart had been sent that
+                # was never delivered anywhere.
+                last_ollama_turn["chart"] = result
                 result = "Chart generated and sent to user successfully."
 
             results.append((name, str(result)))
@@ -578,6 +590,9 @@ def _ollama_chat(
             f"configured model '{OLLAMA_MODEL}'. Run `ollama pull {OLLAMA_MODEL}`, "
             f"or point Lithe at one you already have (installed: {installed})."
         )
+
+    global last_ollama_turn
+    last_ollama_turn = {"rounds": 0, "chart": None}
 
     messages = [{"role": "system", "content": system_prompt}]
     if history:
@@ -1117,9 +1132,15 @@ def chat(user_message: str) -> str:
         if isinstance(ollama_response, dict) and "tool_proposal" in ollama_response:
             return ollama_response
 
-        err = _check_hallucination(cleaned_message, ollama_response, "ollama")
-        if err:
-            ollama_response = err
+        # Only meaningful when no tool ran. Unconditionally, it destroyed
+        # correct answers: the guard keys on words like "found" and "located",
+        # so a genuine search_files result came back to the user as
+        # "ERROR: ... failed to actually invoke the system search tool".
+        # The Gemini path has always gated it on rounds == 0; this had not.
+        if last_ollama_turn["rounds"] == 0:
+            err = _check_hallucination(cleaned_message, ollama_response, "ollama")
+            if err:
+                ollama_response = err
 
         model_content = types.Content(
             role="model",
@@ -1127,6 +1148,8 @@ def chat(user_message: str) -> str:
         )
         _chat_history.append(model_content)
         _save_content(model_content)
+        if last_ollama_turn["chart"]:
+            return {"chart": last_ollama_turn["chart"], "text": ollama_response}
         return ollama_response
 
     except Exception as e:
@@ -1454,9 +1477,14 @@ def chat_stream(user_message: str):
             yield {"type": "tool_proposal", "proposal": ollama_response["tool_proposal"]}
             return
 
-        err = _check_hallucination(cleaned_message, ollama_response, "ollama")
-        if err:
-            ollama_response = err
+        # See chat(): the guard is only meaningful when no tool ran.
+        if last_ollama_turn["rounds"] == 0:
+            err = _check_hallucination(cleaned_message, ollama_response, "ollama")
+            if err:
+                ollama_response = err
+
+        if last_ollama_turn["chart"]:
+            yield {"type": "chart", "data_uri": last_ollama_turn["chart"]}
 
         model_content = types.Content(
             role="model",
@@ -1548,7 +1576,10 @@ def handle_tool_response(accept: bool) -> dict | str:
             )
             _chat_history.append(model_content)
             _save_content(model_content)
-            return answer or "Error: Ollama returned an empty followup response."
+            answer = answer or "Error: Ollama returned an empty followup response."
+            if last_ollama_turn["chart"]:
+                return {"chart": last_ollama_turn["chart"], "text": answer}
+            return answer
         except Exception as e:
             _pending_ollama_messages = None
             _pending_ollama_tool_calls = None
