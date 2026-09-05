@@ -655,6 +655,19 @@ def _abandon_pending_proposal():
 # Tools that change the filesystem always pause for explicit user confirmation.
 MUTATING_TOOLS = ("rename_file", "delete_file", "write_file")
 
+
+def _first_mutating(calls):
+    """The first call that needs confirmation, or None if they are all safe.
+
+    `calls` may be Gemini function_call objects or Ollama's tool_call dicts;
+    both are reduced to a name here so the two engines share one gate.
+    """
+    for call in calls or []:
+        name = call.get("function", {}).get("name") if isinstance(call, dict) else call.name
+        if name in MUTATING_TOOLS:
+            return call
+    return None
+
 # How many times the model may call a tool and be asked again within one turn.
 # Bounded so a model that keeps calling tools cannot loop indefinitely.
 MAX_TOOL_ROUNDS = 5
@@ -757,7 +770,13 @@ def _drive_tool_rounds(response, contents, config, tool_map, rounds: int = 0):
         _save_content(content)
 
     while response.function_calls:
-        call = response.function_calls[0]
+        # The first *mutating* call, not the first call. Gemini can emit
+        # several in one turn, and _execute_tool_calls runs every one it is
+        # given -- so checking only function_calls[0] meant a delete_file
+        # sitting behind a search_files was executed with no confirmation at
+        # all. The gate the whole design rests on was one parallel call away
+        # from being bypassed.
+        call = _first_mutating(response.function_calls) or response.function_calls[0]
 
         if call.name in MUTATING_TOOLS:
             _pending_session = contents.copy()
@@ -1242,7 +1261,12 @@ def chat_stream(user_message: str):
 
         # --- Handle function calls after stream completes ---
         if accumulated_function_calls:
-            call = accumulated_function_calls[0]
+            # As in _drive_tool_rounds: the confirmation gate must consider
+            # every call in the turn, not just the first one.
+            call = (
+                _first_mutating(accumulated_function_calls)
+                or accumulated_function_calls[0]
+            )
 
             # Rebuild the model turn from the streamed pieces.
             model_parts = []

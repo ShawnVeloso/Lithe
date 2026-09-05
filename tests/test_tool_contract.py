@@ -260,3 +260,58 @@ def test_agent_loop_is_bounded(isolated_db, scripted_gemini):
 
     assert client.call_count <= 8, f"unbounded tool loop: {client.call_count} model calls"
     assert isinstance(result, (str, dict))
+
+
+# ---------------------------------------------------------------------------
+# The confirmation gate under parallel tool calls
+# ---------------------------------------------------------------------------
+
+def test_a_mutating_call_beside_a_readonly_one_still_pauses(
+    isolated_db, scripted_gemini, tmp_path, monkeypatch
+):
+    """The gate checked function_calls[0] while _execute_tool_calls ran them all.
+
+    Gemini can emit several calls in one turn. With a read-only call first, the
+    mutating one behind it was executed with no confirmation at all.
+    """
+    from tests.support.fake_gemini import parallel_function_call_response
+
+    monkeypatch.setattr(brain, "_current_conversation_id", "test-conv")
+    victim = tmp_path / "victim.txt"
+    victim.write_text("still here", encoding="utf-8")
+
+    client = scripted_gemini([
+        parallel_function_call_response([
+            ("search_files", {"keyword": "victim"}),
+            ("delete_file", {"path": str(victim)}),
+        ]),
+        text_response("done"),
+    ])
+    result = brain.chat("find victim.txt and delete it")
+
+    assert victim.exists(), "a mutating call was executed without confirmation"
+    assert isinstance(result, dict) and "tool_proposal" in result, result
+    assert result["tool_proposal"]["name"] == "delete_file"
+
+
+def test_the_proposal_describes_the_mutating_call_not_the_first_one(
+    isolated_db, scripted_gemini, tmp_path, monkeypatch
+):
+    """The confirmation card has to show what is about to change."""
+    from tests.support.fake_gemini import parallel_function_call_response
+
+    monkeypatch.setattr(brain, "_current_conversation_id", "test-conv")
+    victim = tmp_path / "victim.txt"
+    victim.write_text("still here", encoding="utf-8")
+
+    scripted_gemini([
+        parallel_function_call_response([
+            ("search_files", {"keyword": "victim"}),
+            ("delete_file", {"path": str(victim)}),
+        ]),
+    ])
+    result = brain.chat("find victim.txt and delete it")
+
+    proposal = result["tool_proposal"]
+    assert proposal["name"] == "delete_file"
+    assert proposal["args"]["path"] == str(victim)
