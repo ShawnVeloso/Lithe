@@ -65,9 +65,9 @@ def _evaluate(case, outcome):
 @pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])
 def test_capability(case, harness):
     failures = []
-    for _ in range(REPEATS):
+    for repeat in range(REPEATS):
         try:
-            outcome = harness.ask(case["prompt"])
+            outcome = harness.ask(case["prompt"], repeat=repeat)
         except Exception as exc:  # a crash is a failed run, not a failed suite
             failures.append(f"raised {type(exc).__name__}: {exc}")
             continue

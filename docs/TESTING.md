@@ -127,6 +127,27 @@ not a capability result and must never be scored as one.
 Use `LITHE_EVAL_REPEATS=1` while iterating, and save the 3-repeat run for an
 actual before/after comparison.
 
+### Why runs are seeded
+
+The scorecard exists to be compared between branches, which requires that two
+runs of the *same* code agree. They did not. Three runs of one commit scored
+**86% -> 64% -> 86%**, and the requests were later proved byte-identical by
+hashing the outgoing `/api/chat` payload on both commits — so the swing was
+sampling, and noise was indistinguishable from a regression.
+
+The Gemini path pins `temperature=0.7`; the Ollama payload set no options at
+all, so the model's own default sampling applied. `brain.OLLAMA_OPTIONS` is
+empty in production — shipped behaviour is unchanged — and the evaluation sets
+`seed = LITHE_EVAL_SEED + repeat`. The same payload with the same seed gives the
+same output, so runs are comparable, while the seed still varies per repeat so
+the repeats sample different outputs instead of producing one answer three
+times.
+
+Change `LITHE_EVAL_SEED` to resample the whole suite deliberately rather than by
+accident. A seeded score is a fixed sample of model behaviour, not an average
+of it: treat a one- or two-case move as within the sample, and prefer a
+mechanical explanation (diff the payload) over assuming a real regression.
+
 ### The corpus
 
 It runs against a **synthetic corpus** built in a temp directory
