@@ -315,3 +315,27 @@ def test_the_proposal_describes_the_mutating_call_not_the_first_one(
     proposal = result["tool_proposal"]
     assert proposal["name"] == "delete_file"
     assert proposal["args"]["path"] == str(victim)
+
+
+def test_both_entry_points_declare_identical_tools(isolated_db, scripted_gemini):
+    """chat() and chat_stream() must offer the same tools with the same wording.
+
+    They used to hold byte-identical 100-line copies of the wrapper
+    definitions. That duplication is what let the declared names drift from the
+    dispatch map, leaving 5 of 9 tools unreachable on Gemini. They now share one
+    factory; this fails if anyone reintroduces a second copy that differs.
+    """
+    sync_client = scripted_gemini([text_response("hi")])
+    brain.chat("probe")
+    sync_config = sync_client.calls[0]["config"]
+
+    brain._chat_history = []
+    stream_client = scripted_gemini([text_response("hi")])
+    _drain(brain.chat_stream("probe"))
+    stream_config = stream_client.calls[0]["config"]
+
+    def described(config):
+        return {(fn.__name__, (fn.__doc__ or "").strip()) for fn in config.tools}
+
+    assert described(sync_config) == described(stream_config)
+    assert {name for name, _ in described(sync_config)} == EXPECTED_TOOL_NAMES

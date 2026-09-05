@@ -724,6 +724,128 @@ def _abandon_pending_proposal():
 MUTATING_TOOLS = ("rename_file", "delete_file", "write_file")
 
 
+def _build_tool_functions():
+    """The tool closures offered to the model, defined once.
+
+    chat() and chat_stream() each carried a byte-identical 100-line copy of
+    these. That duplication is not hypothetical debt: it is what let the
+    declared names drift from the dispatch map, leaving 5 of 9 tools
+    unreachable on Gemini until it was found by the evaluation.
+
+    The docstrings are the descriptions the model is given, and the
+    __name__ of each closure is the name it is declared under, so both are
+    load-bearing. tests/test_tool_contract.py pins them.
+
+    _current_conversation_id is read from module scope at call time rather
+    than captured, so a conversation switch is picked up without rebuilding
+    the tools.
+    """
+    def rename_file(source: str, destination: str) -> str:
+        """Renames a file or directory.
+        Args:
+            source: The absolute path of the file to rename.
+            destination: The new absolute path.
+        """
+        return execute_rename(source, destination, safeword_active=True, conversation_id=_current_conversation_id)
+
+    def delete_file(path: str) -> str:
+        """Deletes a file or directory.
+        Args:
+            path: The absolute path of the file to delete.
+        """
+        return execute_delete(path, safeword_active=True, conversation_id=_current_conversation_id)
+
+    def write_file(path: str, content: str, mode: str) -> str:
+        """Writes content to a file.
+        Args:
+            path: The absolute path of the file to write to.
+            content: The text content to write.
+            mode: 'append' to add to the end of the file, or 'overwrite' to replace it entirely.
+        """
+        return execute_write(path, content, mode, safeword_active=True, conversation_id=_current_conversation_id)
+
+    def search_files(keyword: str) -> str:
+        """Finds indexed files whose FILENAME contains the keyword.
+
+        This matches names only — it cannot see inside files. To answer a
+        question about a file's contents, call this to locate the file and then
+        call read_file on the path it returns. Returns at most 20 matches, most
+        recently modified first.
+
+        Args:
+            keyword: A word or fragment appearing in the filename.
+        """
+        results = search_files_by_name(keyword)
+        if not results:
+            record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result="success (no results)", conversation_id=_current_conversation_id)
+            return f"No files found matching '{keyword}' in the indexed directories."
+        record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result=f"success ({len(results)} found)", conversation_id=_current_conversation_id)
+        lines = []
+        for r in results:
+            size_kb = round(r['size_bytes'] / 1024, 1)
+            cat = f" [{r['category']}]" if r.get('category') else ""
+            lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
+        capped = " (showing the 20 most recently modified; there may be more)" if len(results) >= 20 else ""
+        return f"Found {len(results)} file(s) matching '{keyword}'{capped}:\n" + "\n".join(lines)
+
+    def read_file(path: str) -> str:
+        """Reads the text contents of a file so you can answer questions about it.
+
+        Use this after search_files has told you where a file is, or whenever the
+        user asks what a file says. Large files are truncated with an explicit
+        marker; binary files (PDF, images) cannot be read.
+
+        Args:
+            path: The absolute path of the file to read.
+        """
+        return execute_read(path, conversation_id=_current_conversation_id)
+
+    def profile_data(file_path: str) -> str:
+        """Reads a CSV or Excel file and returns summary statistics, data types, and null counts.
+        Use this to understand the structure and contents of a dataset.
+        Args:
+            file_path: The filename or absolute path of the dataset (.csv or .xlsx).
+        """
+        return _profile_data(file_path, conversation_id=_current_conversation_id)
+
+    def inline_chart(file_path: str, chart_type: str, x_column: str, y_column: str = "", title: str = "") -> str:
+        """Reads a dataset and generates an inline chart (bar, line, scatter, hist).
+        Returns the chart image to the user directly.
+        Args:
+            file_path: The dataset file path (.csv or .xlsx).
+            chart_type: Type of chart: 'bar', 'line', 'scatter', or 'hist'.
+            x_column: Column for the X axis.
+            y_column: Column for the Y axis (required for bar, line, scatter).
+            title: Optional title for the chart.
+        """
+        return _inline_chart(file_path, chart_type, x_column, y_column, title, conversation_id=_current_conversation_id)
+
+    def create_watch_rule(directory: str, pattern: str) -> str:
+        """Creates a watch rule to monitor a directory for files matching a glob pattern.
+        The directory must already be in the whitelist. The only supported action is 'summarize'.
+        Args:
+            directory: The absolute path of the directory to watch (must be whitelisted).
+            pattern: A file glob pattern, e.g. '*.pdf' or 'report_*.csv'.
+        """
+        return _create_watch_rule(directory, pattern, conversation_id=_current_conversation_id)
+
+    def list_watch_rules() -> str:
+        """Lists all active watch rules (directory, pattern, and creation date)."""
+        return _list_watch_rules(conversation_id=_current_conversation_id)
+
+    def delete_watch_rule(rule_id: int) -> str:
+        """Deletes (deactivates) a watch rule by its numeric ID.
+        Args:
+            rule_id: The ID of the watch rule to delete.
+        """
+        return _delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
+    return [
+        rename_file, delete_file, write_file, search_files, read_file,
+        profile_data, inline_chart,
+        create_watch_rule, list_watch_rules, delete_watch_rule,
+    ]
+
+
 def _first_mutating(calls):
     """The first call that needs confirmation, or None if they are all safe.
 
@@ -929,111 +1051,7 @@ def chat(user_message: str) -> str:
     )
 
     # --- F-05: Dynamic Tool Wrappers ---
-    def rename_file(source: str, destination: str) -> str:
-        """Renames a file or directory.
-        Args:
-            source: The absolute path of the file to rename.
-            destination: The new absolute path.
-        """
-        return execute_rename(source, destination, safeword_active=True, conversation_id=_current_conversation_id)
-
-    def delete_file(path: str) -> str:
-        """Deletes a file or directory.
-        Args:
-            path: The absolute path of the file to delete.
-        """
-        return execute_delete(path, safeword_active=True, conversation_id=_current_conversation_id)
-
-    def write_file(path: str, content: str, mode: str) -> str:
-        """Writes content to a file.
-        Args:
-            path: The absolute path of the file to write to.
-            content: The text content to write.
-            mode: 'append' to add to the end of the file, or 'overwrite' to replace it entirely.
-        """
-        return execute_write(path, content, mode, safeword_active=True, conversation_id=_current_conversation_id)
-
-    def search_files(keyword: str) -> str:
-        """Finds indexed files whose FILENAME contains the keyword.
-
-        This matches names only — it cannot see inside files. To answer a
-        question about a file's contents, call this to locate the file and then
-        call read_file on the path it returns. Returns at most 20 matches, most
-        recently modified first.
-
-        Args:
-            keyword: A word or fragment appearing in the filename.
-        """
-        results = search_files_by_name(keyword)
-        if not results:
-            record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result="success (no results)", conversation_id=_current_conversation_id)
-            return f"No files found matching '{keyword}' in the indexed directories."
-        record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result=f"success ({len(results)} found)", conversation_id=_current_conversation_id)
-        lines = []
-        for r in results:
-            size_kb = round(r['size_bytes'] / 1024, 1)
-            cat = f" [{r['category']}]" if r.get('category') else ""
-            lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
-        capped = " (showing the 20 most recently modified; there may be more)" if len(results) >= 20 else ""
-        return f"Found {len(results)} file(s) matching '{keyword}'{capped}:\n" + "\n".join(lines)
-
-    def read_file(path: str) -> str:
-        """Reads the text contents of a file so you can answer questions about it.
-
-        Use this after search_files has told you where a file is, or whenever the
-        user asks what a file says. Large files are truncated with an explicit
-        marker; binary files (PDF, images) cannot be read.
-
-        Args:
-            path: The absolute path of the file to read.
-        """
-        return execute_read(path, conversation_id=_current_conversation_id)
-
-    def profile_data(file_path: str) -> str:
-        """Reads a CSV or Excel file and returns summary statistics, data types, and null counts.
-        Use this to understand the structure and contents of a dataset.
-        Args:
-            file_path: The filename or absolute path of the dataset (.csv or .xlsx).
-        """
-        return _profile_data(file_path, conversation_id=_current_conversation_id)
-
-    def inline_chart(file_path: str, chart_type: str, x_column: str, y_column: str = "", title: str = "") -> str:
-        """Reads a dataset and generates an inline chart (bar, line, scatter, hist).
-        Returns the chart image to the user directly.
-        Args:
-            file_path: The dataset file path (.csv or .xlsx).
-            chart_type: Type of chart: 'bar', 'line', 'scatter', or 'hist'.
-            x_column: Column for the X axis.
-            y_column: Column for the Y axis (required for bar, line, scatter).
-            title: Optional title for the chart.
-        """
-        return _inline_chart(file_path, chart_type, x_column, y_column, title, conversation_id=_current_conversation_id)
-
-    def create_watch_rule(directory: str, pattern: str) -> str:
-        """Creates a watch rule to monitor a directory for files matching a glob pattern.
-        The directory must already be in the whitelist. The only supported action is 'summarize'.
-        Args:
-            directory: The absolute path of the directory to watch (must be whitelisted).
-            pattern: A file glob pattern, e.g. '*.pdf' or 'report_*.csv'.
-        """
-        return _create_watch_rule(directory, pattern, conversation_id=_current_conversation_id)
-
-    def list_watch_rules() -> str:
-        """Lists all active watch rules (directory, pattern, and creation date)."""
-        return _list_watch_rules(conversation_id=_current_conversation_id)
-
-    def delete_watch_rule(rule_id: int) -> str:
-        """Deletes (deactivates) a watch rule by its numeric ID.
-        Args:
-            rule_id: The ID of the watch rule to delete.
-        """
-        return _delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
-
-    tools = [
-        rename_file, delete_file, write_file, search_files, read_file,
-        profile_data, inline_chart,
-        create_watch_rule, list_watch_rules, delete_watch_rule,
-    ]
+    tools = _build_tool_functions()
     # Keyed by __name__ because that is exactly what the Gemini SDK uses when it
     # builds the FunctionDeclaration, so a tool can never be advertised under a
     # name this map cannot resolve.
@@ -1192,111 +1210,7 @@ def chat_stream(user_message: str):
     )
 
     # --- F-05: Dynamic Tool Wrappers (same as chat()) ---
-    def rename_file(source: str, destination: str) -> str:
-        """Renames a file or directory.
-        Args:
-            source: The absolute path of the file to rename.
-            destination: The new absolute path.
-        """
-        return execute_rename(source, destination, safeword_active=True, conversation_id=_current_conversation_id)
-
-    def delete_file(path: str) -> str:
-        """Deletes a file or directory.
-        Args:
-            path: The absolute path of the file to delete.
-        """
-        return execute_delete(path, safeword_active=True, conversation_id=_current_conversation_id)
-
-    def write_file(path: str, content: str, mode: str) -> str:
-        """Writes content to a file.
-        Args:
-            path: The absolute path of the file to write to.
-            content: The text content to write.
-            mode: 'append' to add to the end of the file, or 'overwrite' to replace it entirely.
-        """
-        return execute_write(path, content, mode, safeword_active=True, conversation_id=_current_conversation_id)
-
-    def search_files(keyword: str) -> str:
-        """Finds indexed files whose FILENAME contains the keyword.
-
-        This matches names only — it cannot see inside files. To answer a
-        question about a file's contents, call this to locate the file and then
-        call read_file on the path it returns. Returns at most 20 matches, most
-        recently modified first.
-
-        Args:
-            keyword: A word or fragment appearing in the filename.
-        """
-        results = search_files_by_name(keyword)
-        if not results:
-            record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result="success (no results)", conversation_id=_current_conversation_id)
-            return f"No files found matching '{keyword}' in the indexed directories."
-        record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result=f"success ({len(results)} found)", conversation_id=_current_conversation_id)
-        lines = []
-        for r in results:
-            size_kb = round(r['size_bytes'] / 1024, 1)
-            cat = f" [{r['category']}]" if r.get('category') else ""
-            lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
-        capped = " (showing the 20 most recently modified; there may be more)" if len(results) >= 20 else ""
-        return f"Found {len(results)} file(s) matching '{keyword}'{capped}:\n" + "\n".join(lines)
-
-    def read_file(path: str) -> str:
-        """Reads the text contents of a file so you can answer questions about it.
-
-        Use this after search_files has told you where a file is, or whenever the
-        user asks what a file says. Large files are truncated with an explicit
-        marker; binary files (PDF, images) cannot be read.
-
-        Args:
-            path: The absolute path of the file to read.
-        """
-        return execute_read(path, conversation_id=_current_conversation_id)
-
-    def profile_data(file_path: str) -> str:
-        """Reads a CSV or Excel file and returns summary statistics, data types, and null counts.
-        Use this to understand the structure and contents of a dataset.
-        Args:
-            file_path: The filename or absolute path of the dataset (.csv or .xlsx).
-        """
-        return _profile_data(file_path, conversation_id=_current_conversation_id)
-
-    def inline_chart(file_path: str, chart_type: str, x_column: str, y_column: str = "", title: str = "") -> str:
-        """Reads a dataset and generates an inline chart (bar, line, scatter, hist).
-        Returns the chart image to the user directly.
-        Args:
-            file_path: The dataset file path (.csv or .xlsx).
-            chart_type: Type of chart: 'bar', 'line', 'scatter', or 'hist'.
-            x_column: Column for the X axis.
-            y_column: Column for the Y axis (required for bar, line, scatter).
-            title: Optional title for the chart.
-        """
-        return _inline_chart(file_path, chart_type, x_column, y_column, title, conversation_id=_current_conversation_id)
-
-    def create_watch_rule(directory: str, pattern: str) -> str:
-        """Creates a watch rule to monitor a directory for files matching a glob pattern.
-        The directory must already be in the whitelist. The only supported action is 'summarize'.
-        Args:
-            directory: The absolute path of the directory to watch (must be whitelisted).
-            pattern: A file glob pattern, e.g. '*.pdf' or 'report_*.csv'.
-        """
-        return _create_watch_rule(directory, pattern, conversation_id=_current_conversation_id)
-
-    def list_watch_rules() -> str:
-        """Lists all active watch rules (directory, pattern, and creation date)."""
-        return _list_watch_rules(conversation_id=_current_conversation_id)
-
-    def delete_watch_rule(rule_id: int) -> str:
-        """Deletes (deactivates) a watch rule by its numeric ID.
-        Args:
-            rule_id: The ID of the watch rule to delete.
-        """
-        return _delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
-
-    tools = [
-        rename_file, delete_file, write_file, search_files, read_file,
-        profile_data, inline_chart,
-        create_watch_rule, list_watch_rules, delete_watch_rule,
-    ]
+    tools = _build_tool_functions()
     # Keyed by __name__ because that is exactly what the Gemini SDK uses when it
     # builds the FunctionDeclaration, so a tool can never be advertised under a
     # name this map cannot resolve.
