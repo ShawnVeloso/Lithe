@@ -38,6 +38,7 @@ from src.backend.context_budget import (
     trim_blocks,
     trim_history,
 )
+from src.backend.ollama_bridge import call_name_and_args, to_ollama_messages
 from src.backend.tools import execute_rename, execute_delete, execute_write, execute_read
 from src.backend.memory import search_files_by_name, record_action, insert_auto_summary
 from src.backend.data_tools import profile_data as _profile_data, inline_chart as _inline_chart
@@ -394,18 +395,165 @@ OLLAMA_TOOLS_SCHEMA = [
 ]
 
 
-def _ollama_chat(system_prompt: str, user_message: str, tool_map: dict | None = None) -> str | dict:
+def _ollama_drive_tool_rounds(messages, tool_map, rounds: int = 0):
+    """Keep calling Ollama until it answers in text or the budget runs out.
+
+    The counterpart to _drive_tool_rounds on the Gemini side, and extracted
+    for the same reason: confirming a mutating tool has to resume *into* the
+    loop with the remaining budget rather than making one final call and
+    ending the turn.
+
+    Returns the answer text, or a dict carrying a tool_proposal when a
+    mutating call needs confirmation (the pending globals are set first).
+    """
+    global _pending_ollama_messages, _pending_ollama_tool_calls, _pending_ollama_tool_map
+
+    while True:
+        # Withdrawing the tools on the last round forces a text answer
+        # rather than a call that would have to be discarded -- the same
+        # trick _drive_tool_rounds uses on the Gemini side.
+        offer_tools = bool(tool_map) and rounds < MAX_TOOL_ROUNDS
+        if not offer_tools and rounds >= MAX_TOOL_ROUNDS:
+            logger.warning(
+                "Ollama tool round budget (%d) exhausted; requesting a final "
+                "text answer.", MAX_TOOL_ROUNDS,
+            )
+
+        resp = httpx.post(
+            f"{OLLAMA_URL}/api/chat",
+            json={
+                "model": OLLAMA_MODEL,
+                "messages": messages,
+                "stream": False,
+                "tools": OLLAMA_TOOLS_SCHEMA if offer_tools else [],
+            },
+            timeout=OLLAMA_TIMEOUT,
+        )
+        resp.raise_for_status()
+        message = resp.json().get("message", {})
+        calls = message.get("tool_calls") or []
+
+        # `not offer_tools` matters as much as `not calls`: on the final
+        # round the tools were withdrawn, so any call the model still emits
+        # is discarded rather than driving another iteration. Without it a
+        # model that keeps calling loops forever despite the budget.
+        if not calls or not tool_map or not offer_tools:
+            content = message.get("content", "")
+            if content:
+                return content
+            if rounds >= MAX_TOOL_ROUNDS:
+                return (
+                    f"I stopped after {MAX_TOOL_ROUNDS} tool steps without "
+                    "reaching an answer. Try narrowing the request or asking "
+                    "for one step at a time."
+                )
+            return "Error: Ollama returned an empty response."
+
+        # The gate scans every call in the turn, not just the first: a
+        # delete_file behind a search_files must still pause.
+        mutating = _first_mutating(calls)
+        if mutating is not None:
+            name, args = call_name_and_args(mutating)
+            _pending_ollama_messages = messages.copy()
+            _pending_ollama_messages.append(message)
+            _pending_ollama_tool_calls = calls
+            _pending_ollama_tool_map = tool_map
+            return {
+                "tool_proposal": {
+                    "name": name,
+                    "args": args,
+                    "diff": _build_tool_diff(mutating),
+                }
+            }
+
+        rounds += 1
+        messages.append(message)
+        _record_ollama_calls(calls)
+
+        results = []
+        for call in calls:
+            name, args = call_name_and_args(call)
+            if name in tool_map:
+                try:
+                    result = tool_map[name](**args)
+                except TypeError as e:
+                    result = f"Argument Error: {e}"
+                except Exception as e:
+                    result = f"Python Execution Error: {e}"
+            else:
+                result = f"Error: Tool {name} not recognized."
+
+            if (
+                name == "inline_chart"
+                and isinstance(result, str)
+                and result.startswith("data:image")
+            ):
+                # As on the Gemini path: a base64 image in the transcript
+                # would be replayed on every later turn.
+                result = "Chart generated and sent to user successfully."
+
+            results.append((name, str(result)))
+            messages.append({"role": "tool", "name": name, "content": str(result)})
+
+        _record_ollama_results(results)
+
+
+def _record_ollama_calls(calls):
+    """Put an Ollama tool-call turn into the transcript, in Gemini's shape.
+
+    _chat_history is the single transcript both engines share, so a fallback
+    turn has to be stored the same way -- otherwise switching back to Gemini
+    mid-conversation replays a history with holes in it.
+    """
+    parts = []
+    for call in calls:
+        name, args = call_name_and_args(call)
+        parts.append(types.Part.from_function_call(name=name, args=args))
+    if not parts:
+        return
+    content = types.Content(role="model", parts=parts)
+    _chat_history.append(content)
+    _save_content(content)
+
+
+def _record_ollama_results(results):
+    """The matching tool-result turn for _record_ollama_calls."""
+    parts = [
+        types.Part.from_function_response(name=name, response={"result": text})
+        for name, text in results
+    ]
+    if not parts:
+        return
+    content = types.Content(role="user", parts=parts)
+    _chat_history.append(content)
+    _save_content(content)
+
+
+def _ollama_chat(
+    system_prompt: str,
+    user_message: str,
+    tool_map: dict | None = None,
+    history: list | None = None,
+) -> str | dict:
     """Send a prompt to the local Ollama instance and return its response.
 
     Uses the /api/chat endpoint with proper message roles so Ollama
     receives the system prompt as a first-class instruction, not
     concatenated into the user message.
-    Handles function calling synchronously via Ollama's native tool support.
+
+    Runs the same bounded tool loop the Gemini path does, so the fallback can
+    search and then act on what it found. It previously executed
+    `tool_calls[0]`, asked once more with tools removed, and stopped -- one
+    tool per turn, no chaining, and any further call discarded.
 
     Args:
         system_prompt: The system instruction (candid or compliant).
-        user_message:  The cleaned user message (with file context injected).
+        user_message:  The cleaned user message. Used only when `history` is
+                       absent, since a transcript already ends with this turn.
         tool_map:      Dictionary of python functions for tools.
+        history:       Budget-trimmed transcript to replay. Omitted by one-off
+                       callers such as watch-rule summarisation, which have no
+                       conversation to carry.
 
     Returns:
         The model's text response, or a dict containing a tool_proposal,
@@ -431,111 +579,16 @@ def _ollama_chat(system_prompt: str, user_message: str, tool_map: dict | None = 
             f"or point Lithe at one you already have (installed: {installed})."
         )
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message},
-    ]
-
-    payload = {
-        "model": OLLAMA_MODEL,
-        "messages": messages,
-        "stream": False,
-        "tools": OLLAMA_TOOLS_SCHEMA if tool_map else []
-    }
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(to_ollama_messages(history))
+    else:
+        # No transcript to replay (watch-rule summarisation, and any caller
+        # that wants a genuinely one-off answer).
+        messages.append({"role": "user", "content": user_message})
 
     try:
-        resp = httpx.post(
-            f"{OLLAMA_URL}/api/chat",
-            json=payload,
-            timeout=OLLAMA_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        message = data.get("message", {})
-        
-        # --- Handle Function Calls ---
-        if "tool_calls" in message and tool_map:
-            # We only support one function call at a time for simplicity in the UI
-            call = message["tool_calls"][0]
-            name = call["function"]["name"]
-            args = call["function"]["arguments"]
-            
-            # --- Check if it's a mutating tool that needs confirmation ---
-            if name in ["rename_file", "delete_file", "write_file"]:
-                global _pending_ollama_messages, _pending_ollama_tool_calls, _pending_ollama_tool_map
-                _pending_ollama_messages = messages.copy()
-                _pending_ollama_messages.append(message)
-                _pending_ollama_tool_calls = message["tool_calls"]
-                _pending_ollama_tool_map = tool_map
-                
-                # Generate diff string
-                diff_str = ""
-                if name == "delete_file":
-                    diff_str = f"- {args.get('path', '')}"
-                elif name == "rename_file":
-                    diff_str = f"- {args.get('source', '')}\n+ {args.get('destination', '')}"
-                elif name == "write_file":
-                    import os
-                    mode = args.get("mode", "overwrite")
-                    content = args.get("content", "")
-                    if mode == "append":
-                        diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
-                    else:
-                        path = args.get("path", "")
-                        if os.path.exists(path):
-                            with open(path, 'r', encoding='utf-8') as f:
-                                old_lines = f.readlines()
-                            new_lines = [line + '\n' if not line.endswith('\n') else line for line in content.splitlines()]
-                            diff = difflib.unified_diff(old_lines, new_lines, fromfile=path, tofile=path, lineterm='')
-                            diff_str = "\n".join(diff)
-                        else:
-                            diff_str = "\n".join(f"+ {line}" for line in content.splitlines())
-
-                return {
-                    "tool_proposal": {
-                        "name": name,
-                        "args": args,
-                        "diff": diff_str
-                    }
-                }
-                
-            # Non-mutating tools execute immediately
-            messages.append(message)
-            if name in tool_map:
-                try:
-                    result = tool_map[name](**args)
-                except TypeError as e:
-                    result = f"Argument Error: {e}"
-                except Exception as e:
-                    result = f"Python Execution Error: {e}"
-            else:
-                result = f"Error: Tool {name} not recognized."
-                
-            messages.append({
-                "role": "tool",
-                "content": str(result)
-            })
-            
-            # Call Ollama a second time for final answer
-            followup_payload = {
-                "model": OLLAMA_MODEL,
-                "messages": messages,
-                "stream": False
-            }
-            resp_followup = httpx.post(
-                f"{OLLAMA_URL}/api/chat",
-                json=followup_payload,
-                timeout=OLLAMA_TIMEOUT,
-            )
-            resp_followup.raise_for_status()
-            content = resp_followup.json().get("message", {}).get("content", "")
-            return content or "Error: Ollama returned an empty followup response."
-
-        # No function calls
-        content = message.get("content", "")
-        if not content:
-            return "Error: Ollama returned an empty response."
-        return content
+        return _ollama_drive_tool_rounds(messages, tool_map)
 
     except httpx.TimeoutException:
         return (
@@ -660,10 +713,10 @@ def _first_mutating(calls):
     """The first call that needs confirmation, or None if they are all safe.
 
     `calls` may be Gemini function_call objects or Ollama's tool_call dicts;
-    both are reduced to a name here so the two engines share one gate.
+    call_name_and_args reduces both so the two engines share one gate.
     """
     for call in calls or []:
-        name = call.get("function", {}).get("name") if isinstance(call, dict) else call.name
+        name, _ = call_name_and_args(call)
         if name in MUTATING_TOOLS:
             return call
     return None
@@ -674,17 +727,26 @@ MAX_TOOL_ROUNDS = 5
 
 
 def _build_tool_diff(call) -> str:
-    """A human-readable preview of what a mutating tool would do."""
-    if call.name == "delete_file":
-        return f"- {call.args['path']}"
+    """A human-readable preview of what a mutating tool would do.
 
-    if call.name == "rename_file":
-        return f"- {call.args['source']}\n+ {call.args['destination']}"
+    Takes a call from either engine. _ollama_chat carried its own near-copy of
+    this, which had already drifted: it wrote the whole file as additions when
+    the target did not exist but used a different escape for the append case,
+    and it never learned the errors="replace" guard that stops a file with odd
+    bytes from raising inside the confirmation prompt.
+    """
+    name, args = call_name_and_args(call)
 
-    if call.name == "write_file":
-        mode = call.args.get("mode", "overwrite")
-        content = call.args.get("content", "")
-        path = call.args["path"]
+    if name == "delete_file":
+        return f"- {args['path']}"
+
+    if name == "rename_file":
+        return f"- {args['source']}\n+ {args['destination']}"
+
+    if name == "write_file":
+        mode = args.get("mode", "overwrite")
+        content = args.get("content", "")
+        path = args["path"]
         if mode != "append" and os.path.exists(path):
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 old_lines = f.readlines()
@@ -888,7 +950,6 @@ def chat(user_message: str) -> str:
             keyword: A word or fragment appearing in the filename.
         """
         results = search_files_by_name(keyword)
-        import json
         if not results:
             record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result="success (no results)", conversation_id=_current_conversation_id)
             return f"No files found matching '{keyword}' in the indexed directories."
@@ -1047,7 +1108,11 @@ def chat(user_message: str) -> str:
             "Gemini unavailable (%s): %s — falling back to Ollama (%s @ %s)",
             type(e).__name__, e, OLLAMA_MODEL, OLLAMA_URL,
         )
-        ollama_response = _ollama_chat(system_prompt, cleaned_message, tool_map)
+        # The transcript already ends with this turn, so the fallback replays
+        # it rather than being handed a lone message with no context.
+        ollama_response = _ollama_chat(
+            system_prompt, cleaned_message, tool_map, history=trim_history(_chat_history)
+        )
         
         if isinstance(ollama_response, dict) and "tool_proposal" in ollama_response:
             return ollama_response
@@ -1140,7 +1205,6 @@ def chat_stream(user_message: str):
             keyword: A word or fragment appearing in the filename.
         """
         results = search_files_by_name(keyword)
-        import json
         if not results:
             record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result="success (no results)", conversation_id=_current_conversation_id)
             return f"No files found matching '{keyword}' in the indexed directories."
@@ -1380,7 +1444,11 @@ def chat_stream(user_message: str):
             "Gemini streaming unavailable (%s): %s — falling back to Ollama (%s @ %s)",
             type(e).__name__, e, OLLAMA_MODEL, OLLAMA_URL,
         )
-        ollama_response = _ollama_chat(system_prompt, cleaned_message, tool_map)
+        # The transcript already ends with this turn, so the fallback replays
+        # it rather than being handed a lone message with no context.
+        ollama_response = _ollama_chat(
+            system_prompt, cleaned_message, tool_map, history=trim_history(_chat_history)
+        )
         
         if isinstance(ollama_response, dict) and "tool_proposal" in ollama_response:
             yield {"type": "tool_proposal", "proposal": ollama_response["tool_proposal"]}
@@ -1423,49 +1491,64 @@ def handle_tool_response(accept: bool) -> dict | str:
         if not _pending_ollama_messages or not _pending_ollama_tool_calls:
             return "Error: No pending Ollama tool call found."
 
-        call = _pending_ollama_tool_calls[0]
-        name = call["function"]["name"]
-        args = call["function"]["arguments"]
+        # Every pending call, not just [0]. The gate now pauses on the first
+        # *mutating* call in the turn, which may sit behind a read-only one --
+        # so resolving only [0] would run the wrong tool and never run the one
+        # the user actually confirmed.
+        messages = _pending_ollama_messages
+        pending_calls = _pending_ollama_tool_calls
+        tool_map = _pending_ollama_tool_map
 
-        if accept:
-            if name in _pending_ollama_tool_map:
-                try:
-                    result = _pending_ollama_tool_map[name](**args)
-                except TypeError as e:
-                    result = f"Argument Error: {e}"
-                except Exception as e:
-                    result = f"Python Execution Error: {e}"
+        results = []
+        for call in pending_calls:
+            name, args = call_name_and_args(call)
+            if accept:
+                if name in tool_map:
+                    try:
+                        result = tool_map[name](**args)
+                    except TypeError as e:
+                        result = f"Argument Error: {e}"
+                    except Exception as e:
+                        result = f"Python Execution Error: {e}"
+                else:
+                    result = f"Error: Tool {name} not recognized."
             else:
-                result = f"Error: Tool {name} not recognized."
-        else:
-            result = "ERROR: The user REJECTED this operation. Acknowledge this and ask what else you can do."
-            import json
-            record_action(name, json.dumps(args), reversible=False, decision_outcome="rejected", execution_result="User rejected", conversation_id=_current_conversation_id)
+                result = (
+                    "ERROR: The user REJECTED this operation. Acknowledge this "
+                    "and ask what else you can do."
+                )
+                record_action(
+                    name, json.dumps(args), reversible=False,
+                    decision_outcome="rejected", execution_result="User rejected",
+                    conversation_id=_current_conversation_id,
+                )
 
-        _pending_ollama_messages.append({
-            "role": "tool",
-            "content": str(result)
-        })
+            results.append((name, str(result)))
+            messages.append({"role": "tool", "name": name, "content": str(result)})
+
+        _record_ollama_calls(pending_calls)
+        _record_ollama_results(results)
+
+        _pending_ollama_messages = None
+        _pending_ollama_tool_calls = None
+        _pending_ollama_tool_map = None
 
         try:
-            resp = httpx.post(
-                f"{OLLAMA_URL}/api/chat",
-                json={
-                    "model": OLLAMA_MODEL,
-                    "messages": _pending_ollama_messages,
-                    "stream": False
-                },
-                timeout=OLLAMA_TIMEOUT,
+            # Resume *into* the loop rather than making one final call, so
+            # "delete this, then tell me what's left" does not stop at the
+            # delete. rounds=1 charges the confirmed step against the budget.
+            answer = _ollama_drive_tool_rounds(messages, tool_map, rounds=1)
+            if isinstance(answer, dict):
+                # Another mutating tool needs confirmation; the driver has
+                # already re-armed the pending state.
+                return answer
+
+            model_content = types.Content(
+                role="model", parts=[types.Part.from_text(text=answer)]
             )
-            resp.raise_for_status()
-            content = resp.json().get("message", {}).get("content", "")
-            
-            # Clear state
-            _pending_ollama_messages = None
-            _pending_ollama_tool_calls = None
-            _pending_ollama_tool_map = None
-            
-            return content or "Error: Ollama returned an empty followup response."
+            _chat_history.append(model_content)
+            _save_content(model_content)
+            return answer or "Error: Ollama returned an empty followup response."
         except Exception as e:
             _pending_ollama_messages = None
             _pending_ollama_tool_calls = None
@@ -1474,7 +1557,11 @@ def handle_tool_response(accept: bool) -> dict | str:
 
 
     # --- Gemini Path ---
-    global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map, _chat_history, _pending_rounds_used
+    # _chat_history is no longer in this list: nothing here rebinds it since
+    # the `_chat_history = session.copy()` resync was removed, and declaring it
+    # global after the Ollama branch above has already appended to it is a
+    # syntax error.
+    global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map, _pending_rounds_used
     if not _pending_session or not _pending_tool_calls:
         return "Error: No pending tool call found."
 
@@ -1493,7 +1580,6 @@ def handle_tool_response(accept: bool) -> dict | str:
                 result = f"Error: Tool {call.name} not recognized."
         else:
             result = "ERROR: The user REJECTED this operation. Acknowledge this and ask what else you can do."
-            import json
             if isinstance(call.args, dict):
                 args_dict = call.args
             else:
