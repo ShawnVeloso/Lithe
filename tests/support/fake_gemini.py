@@ -107,3 +107,24 @@ class ScriptedGeminiClient:
                 if part.function_response is not None:
                     out.append(str(part.function_response.response))
         return out
+
+
+def parallel_function_call_response(calls) -> types.GenerateContentResponse:
+    """A model turn requesting several tool calls at once.
+
+    Gemini supports parallel function calling, so a single turn can carry a
+    read-only call alongside a mutating one. Lithe has to notice the second.
+    """
+    return types.GenerateContentResponse(
+        candidates=[
+            types.Candidate(
+                content=types.Content(
+                    role="model",
+                    parts=[
+                        types.Part.from_function_call(name=name, args=args)
+                        for name, args in calls
+                    ],
+                )
+            )
+        ]
+    )
