@@ -87,6 +87,14 @@ active_engine = "gemini"
 # chart has to be handed to the UI rather than dropped.
 last_ollama_turn = {"rounds": 0, "chart": None}
 
+# Extra sampling options merged into every Ollama request. Empty in production,
+# so the model's own defaults apply exactly as before. The capability
+# evaluation sets a per-repeat `seed` here: an identical payload plus an
+# identical seed gives identical output, which is what makes two runs of the
+# suite comparable. Without it the score swung 86 -> 64 -> 86 on byte-identical
+# requests, and sampling noise was indistinguishable from a regression.
+OLLAMA_OPTIONS: dict = {}
+
 from src.backend.logger import logger
 
 # ---------------------------------------------------------------------------
@@ -426,15 +434,17 @@ def _ollama_drive_tool_rounds(messages, tool_map, rounds: int = 0):
                 "text answer.", MAX_TOOL_ROUNDS,
             )
 
+        payload = {
+            "model": OLLAMA_MODEL,
+            "messages": messages,
+            "stream": False,
+            "tools": OLLAMA_TOOLS_SCHEMA if offer_tools else [],
+        }
+        if OLLAMA_OPTIONS:
+            payload["options"] = dict(OLLAMA_OPTIONS)
+
         resp = httpx.post(
-            f"{OLLAMA_URL}/api/chat",
-            json={
-                "model": OLLAMA_MODEL,
-                "messages": messages,
-                "stream": False,
-                "tools": OLLAMA_TOOLS_SCHEMA if offer_tools else [],
-            },
-            timeout=OLLAMA_TIMEOUT,
+            f"{OLLAMA_URL}/api/chat", json=payload, timeout=OLLAMA_TIMEOUT
         )
         resp.raise_for_status()
         message = resp.json().get("message", {})

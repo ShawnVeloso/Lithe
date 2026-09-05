@@ -28,6 +28,10 @@ import pytest
 
 ENGINE = os.getenv("LITHE_EVAL_ENGINE", "ollama").strip().lower()
 
+# Base seed for Ollama sampling; each repeat uses EVAL_SEED + n. Change it to
+# resample the whole suite deliberately rather than by accident.
+EVAL_SEED = int(os.getenv("LITHE_EVAL_SEED", "20260905"))
+
 # Set when the run hits something that makes further cases meaningless (a
 # Gemini quota wall, an Ollama that stopped answering). Remaining cases skip
 # rather than scoring zero for a reason that has nothing to do with Lithe.
@@ -239,7 +243,7 @@ class EvalHarness:
         self.corpus = corpus_dir
         self.engine = engine
 
-    def ask(self, prompt: str, transport_retries: int = 3) -> dict:
+    def ask(self, prompt: str, transport_retries: int = 3, repeat: int = 0) -> dict:
         """Run one turn and report what Lithe did as well as what it said.
 
         Gemini returns 503 "high demand" often enough to distort a score, and
@@ -249,7 +253,7 @@ class EvalHarness:
         day, so the run is aborted instead.
         """
         for attempt in range(transport_retries):
-            outcome = self._ask_once(prompt)
+            outcome = self._ask_once(prompt, repeat)
             if outcome.get("error") and is_quota_error(outcome["error"]):
                 ABORT["reason"] = (
                     "Gemini quota exhausted mid-run (429). The free tier allows "
@@ -264,7 +268,7 @@ class EvalHarness:
                 time.sleep(5 * (attempt + 1))
         return outcome
 
-    def _ask_once(self, prompt: str) -> dict:
+    def _ask_once(self, prompt: str, repeat: int = 0) -> dict:
         from src.backend import brain
 
         real_client = brain._client
@@ -274,6 +278,17 @@ class EvalHarness:
         else:
             recorder = RecordingClient(real_client)
             brain._client = recorder
+
+        # Pin Ollama's sampling. The same payload with the same seed gives the
+        # same output, so two runs of the suite are comparable; the seed varies
+        # per repeat so the repeats still sample different outputs rather than
+        # producing three copies of one answer. Without this the score swung
+        # 86 -> 64 -> 86 on requests proved byte-identical, which makes noise
+        # indistinguishable from a regression -- the one thing a measuring
+        # instrument must never do.
+        brain.OLLAMA_OPTIONS = (
+            {"seed": EVAL_SEED + repeat} if self.engine == "ollama" else {}
+        )
 
         brain._chat_history = []
         brain._context_blocks = []
@@ -289,6 +304,7 @@ class EvalHarness:
                 answer = brain.chat(prompt)
         finally:
             brain._client = real_client
+            brain.OLLAMA_OPTIONS = {}
 
         # A tool proposal short-circuits before any text is produced.
         if isinstance(answer, dict):
