@@ -14,7 +14,7 @@ Lithe is a hybrid desktop application. It acts as an always-on, permissioned loc
 | **Frontend UI** | Electron + React (TypeScript) | Provides a polished, OS-native desktop window (borrowing the architectural style from the *Winnow* reference). |
 | **Backend Engine** | Python + FastAPI | The core orchestrator. Ideal for a Data Science student. Handles file system access, data manipulation, AI tool execution, and serves a REST API on `localhost:8321`. |
 | **Memory & Indexing** | SQLite (WAL mode) | A lightweight, local-first database to index whitelisted directories. Uses WAL for concurrent read/write access. Allows the AI to instantly search files using keyword search without rescanning the hard drive every time. |
-| **The Brain (LLM)** | Gemini API / Ollama | A fallback pattern. Uses the Gemini API (`gemini-3.6-flash`) for complex, high-speed reasoning, with automatic fallback to local Ollama models when Gemini is unreachable (network failure, rate limit, API error). |
+| **The Brain (LLM)** | Gemini API / Ollama | A fallback pattern. Uses the Gemini API (`gemini-3.6-flash`) for complex, high-speed reasoning, with automatic fallback to local Ollama models when Gemini is unreachable (network failure, rate limit, API error). Both engines share one transcript and run the same bounded tool loop, so a mid-conversation fallback keeps its memory and its ability to chain tools. Readiness means the configured model is actually pulled, not merely that the Ollama server answers. |
 | **File Watching** | `watchdog` library | Real-time, event-driven monitoring of whitelisted directories. Replaces the need for full re-scans on every startup after the initial index. |
 
 ## 3. Architecture Style: The "Permissioned Local Actor"
@@ -103,15 +103,18 @@ Two layers, kept deliberately separate (full detail in `docs/TESTING.md`):
   a mismatch between the tool names declared to the model and the names the
   dispatch map can resolve.
 - **Capability evaluation** (`LITHE_EVAL=1 python -m pytest -m eval`) — opt-in,
-  calls the real Gemini API against a synthetic corpus and prints a scorecard.
-  Excluded from normal runs via `addopts = -m "not eval"`.
+  drives a real LLM against a synthetic corpus and prints a scorecard.
+  Excluded from normal runs via `addopts = -m "not eval"`. It scores Ollama by
+  default: Gemini's free tier allows 20 requests/day per model and one pass
+  needs ~80-100, so a free key can never complete a run. See TESTING.md.
 
 Known defects are recorded as `xfail(strict=True)` tests rather than prose, so
 they are listed on every run and cannot be fixed — or forgotten — silently.
 
-Because `brain.chat()` catches bare `Exception` and reroutes to Ollama, the
-evaluation explicitly asserts which engine served each case; otherwise a bug or
-a 503 would be scored as the model giving a poor answer.
+`brain.chat()` separates transport failures (which fall back to Ollama) from
+defects in Lithe (which are logged with a traceback and reported as internal
+errors, without switching engines). The evaluation still asserts which engine
+served each case, so a 503 is never scored as the model giving a poor answer.
 
 ## 9. Key Dependencies
 

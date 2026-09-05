@@ -148,6 +148,12 @@ CASES = [
 
     # -- Multi-step (needs the bounded loop + read_file) --------------------
     {
+        # Still failing on Ollama, but the cause has moved. Lithe chains fine
+        # now (see tests/test_ollama_path.py); llama3.2 runs search_files, gets
+        # the path back, and then answers that it "cannot read files" -- with
+        # read_file in the schema it was just handed and the system prompt
+        # telling it to make exactly that call. A model limitation, not a
+        # harness one, so it will not close without a stronger local model.
         "id": "multistep-find-then-read",
         "category": "multi-step",
         "prompt": "find the file about the meeting, then tell me the code word inside it",
