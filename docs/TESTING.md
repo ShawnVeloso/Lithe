@@ -67,6 +67,12 @@ are labelled as such and will need updating when content indexing lands.
 **`tests/test_safeword.py`** — the persona override, which had no coverage at
 any level despite being the main behavioural switch.
 
+**`tests/test_eval_scoring.py`** — the measuring instrument, tested like any
+other code. Each test pins one scenario the previous scorer called a pass: the
+guard ERROR, the undelivered chart, the undispatchable tool. These run in the
+normal suite on purpose, so a mistake in the scorer surfaces on every run
+rather than only when someone opts into a live evaluation.
+
 **`tests/conftest.py`** — shared fixtures. Two are autouse for safety:
 `reset_brain_state` (brain keeps the session in module globals, so a leftover
 pending tool proposal would otherwise change the next test's result) and
@@ -185,6 +191,55 @@ spoken to with a bare `httpx.post`, so that is wrapped instead. Neither
 requires production code to cooperate: an evaluation that needed `brain.py` to
 know it was being tested would be measuring something other than what ships.
 
+**Tool-result recording.** The recorders also capture what each tool
+*returned*, harvested from the next outgoing request — Gemini's
+`function_response` parts, Ollama's `role: "tool"` messages. Both engines
+always send the results back to the model, so nothing has to be read out of
+production code to see them. This closes a blind spot described below.
+
+## What a run is judged on
+
+`tests/eval/scoring.py` holds the rules, kept out of the test module so the
+normal suite can exercise them (`tests/test_eval_scoring.py`). That separation
+was earned: **the scorecard has twice reported a pass over a real defect, and
+both times the fault was in the scoring rules rather than in Lithe.**
+
+Both misses have one shape. A case asserted that a tool was *called* and
+stopped there, so everything after the tool returned was invisible:
+
+- `select-search` passed while the hallucination guard was replacing correct
+  answers with *"ERROR: The LLM generated a narrative claiming to have searched
+  for files…"*. The tool ran; the user got an error message.
+- `select-chart` passed while charts were generated and then dropped on the
+  Ollama path. The tool ran; the image reached nobody.
+
+Calling a tool is not the capability. The user receiving its result is. So
+scoring now runs in three layers.
+
+**1. Invariants**, applied to every case whether it asks for them or not —
+because the next case someone writes should not have to remember them:
+
+| Invariant | Catches |
+|-----------|---------|
+| The answer is not one of Lithe's own failure strings (`LITHE_FAILURE_TEXT`) | The hallucination guard destroying a correct answer; `chat()`'s internal-error branch; an empty Ollama reply |
+| No tool result is `Error: Tool X not recognized.` | Lithe declaring a tool under one name and dispatching another — the exact defect that left 5 of 9 tools unreachable on Gemini, and which every affected case scored as the *model* choosing badly |
+| The run stayed on the engine being scored | A transport failure rerouting to Ollama mid-case |
+
+**2. Call-level** — `expect_tool`, `args_predicate`, `expect_all_tools`,
+`expect_no_tool`. Unchanged.
+
+**3. Result-level** — new, and where a case should reach first:
+
+| Field | Asserts |
+|-------|---------|
+| `result_must_contain` | The tool did its job: substrings required in what the tools returned |
+| `must_contain` | The user was told: substrings required in the final answer |
+| `expect_chart` | An actual `data:image` URI reached the caller, not the model's word that one was sent |
+
+`result_must_contain` and `must_contain` are most useful as a pair. When only
+one fails, the failure detail says which half broke — a tool that returned
+nothing useful, or an answer that dropped a result which was fine.
+
 ### Reading the scorecard
 
 ```
@@ -213,3 +268,10 @@ column in the corpus rather than that a chart was produced at all. Include
 negative cases — `no-tool-arithmetic` checks that Lithe does *not* reach for
 the filesystem to do arithmetic, and over-calling is as damaging as
 under-calling.
+
+**`expect_tool` on its own is the weakest useful assertion there is.** It
+passes the moment the model names the right tool. Reach for a result-level
+field as well, and prefer one whose substring can only appear if the work
+actually happened: `"--- DATA PROFILE:"` is emitted by a successful
+`profile_data` and by none of its error paths, so it distinguishes a profile
+from a call that was merely made.

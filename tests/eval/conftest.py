@@ -125,16 +125,19 @@ def stop_after_abort():
 
 
 class RecordingClient:
-    """Delegates to the real Gemini client while recording tool calls.
+    """Delegates to the real Gemini client while recording tool traffic.
 
     brain.chat() returns only the final text, so without this there is no way
     to tell which tool the model chose — which is most of what we want to
-    measure.
+    measure. It records what tools *returned* as well, because knowing a tool
+    was called says nothing about whether it worked: a call Lithe could not
+    dispatch and a call that succeeded look identical from the outside.
     """
 
     def __init__(self, inner):
         self._inner = inner
-        self.tool_calls = []  # list of (name, args)
+        self.tool_calls = []    # list of (name, args)
+        self.tool_results = []  # list of (name, result text)
         self.error = None
 
     @property
@@ -147,6 +150,9 @@ class _RecordingModels:
         self._owner = owner
 
     def generate_content(self, **kwargs):
+        # Results of the calls executed so far ride out in *this* request, as
+        # the function_response parts _execute_tool_calls appended to contents.
+        self._harvest_results(kwargs.get("contents"))
         try:
             response = self._owner._inner.models.generate_content(**kwargs)
         except Exception as e:
@@ -157,6 +163,23 @@ class _RecordingModels:
         for call in (response.function_calls or []):
             self._owner.tool_calls.append((call.name, dict(call.args or {})))
         return response
+
+    def _harvest_results(self, contents):
+        """Pull function_response parts out of an outgoing request.
+
+        Contents only grow within a turn, so anything past what has already
+        been recorded is new — counting rather than de-duplicating by value, so
+        that two identical searches are still two results.
+        """
+        found = []
+        for content in contents or []:
+            for part in getattr(content, "parts", None) or []:
+                response = getattr(part, "function_response", None)
+                if response is None:
+                    continue
+                payload = getattr(response, "response", None) or {}
+                found.append((response.name or "", str(payload.get("result", ""))))
+        self._owner.tool_results.extend(found[len(self._owner.tool_results):])
 
     def generate_content_stream(self, **kwargs):
         return self._owner._inner.models.generate_content_stream(**kwargs)
@@ -196,6 +219,7 @@ class OllamaRecorder:
     def __init__(self):
         self.tool_calls = []   # what Lithe actually executed
         self.requested = []    # what the model asked for
+        self.tool_results = []  # what those calls returned
         self._real_post = None
 
     def __enter__(self):
@@ -203,6 +227,8 @@ class OllamaRecorder:
         self._real_post = httpx.post
 
         def recording_post(url, *args, **kwargs):
+            if "/api/chat" in str(url):
+                self._harvest_results(kwargs.get("json"))
             response = self._real_post(url, *args, **kwargs)
             if "/api/chat" in str(url):
                 self._harvest(response)
@@ -236,6 +262,26 @@ class OllamaRecorder:
             self.requested.append(entry)
             if index == 0:
                 self.tool_calls.append(entry)
+
+    def _harvest_results(self, payload):
+        """Read what tools returned out of the *outgoing* request.
+
+        Ollama gets a tool result as a `role: "tool"` message on the next
+        request, and _ollama_drive_tool_rounds always loops back to post again
+        after executing, so every result passes through here. Reading the
+        request rather than asking brain.py keeps production code unaware it is
+        being measured.
+
+        Messages only grow within a turn, so anything past what has already
+        been recorded is new.
+        """
+        messages = (payload or {}).get("messages") or []
+        results = [
+            (m.get("name", ""), str(m.get("content", "")))
+            for m in messages
+            if m.get("role") == "tool"
+        ]
+        self.tool_results.extend(results[len(self.tool_results):])
 
 
 class EvalHarness:
@@ -307,8 +353,16 @@ class EvalHarness:
             brain.OLLAMA_OPTIONS = {}
 
         # A tool proposal short-circuits before any text is produced.
+        chart = None
         if isinstance(answer, dict):
             text = answer.get("text", "") or ""
+            # brain.chat() returns {"chart", "text"} when an image was produced.
+            # Dropping it here is what let a real defect score as a pass: the
+            # Ollama path generated a chart, swapped it for an acknowledgement
+            # in the transcript, and returned only the acknowledgement -- so the
+            # model truthfully relayed a delivery that never happened, while
+            # `expect_tool: inline_chart` went on passing.
+            chart = answer.get("chart")
             proposal = answer.get("tool_proposal")
             name = proposal.get("name", "") if proposal else ""
             if name and name not in [n for n, _ in recorder.tool_calls]:
@@ -326,8 +380,12 @@ class EvalHarness:
         requested = getattr(recorder, "requested", recorder.tool_calls)
         return {
             "text": text,
+            "chart": chart,
             "tool_calls": recorder.tool_calls,
             "tool_names": [name for name, _ in recorder.tool_calls],
+            # What each executed tool returned, so a case can tell "the tool
+            # failed" apart from "the tool worked and the answer dropped it".
+            "tool_results": list(recorder.tool_results),
             # Only differs on the Ollama path, which executes the first call
             # and drops the rest. Scored cases use tool_names (executed);
             # this is here so a failure detail can say what was asked for.

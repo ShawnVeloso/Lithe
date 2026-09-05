@@ -1,6 +1,9 @@
-"""Live capability evaluation — opt-in, hits the real Gemini API.
+"""Live capability evaluation — opt-in, runs a real model.
 
     LITHE_EVAL=1 python -m pytest -m eval
+
+The engine is Ollama unless LITHE_EVAL_ENGINE says otherwise; see
+tests/eval/conftest.py for why. How a run is judged lives in scoring.py.
 
 Each case runs several times because model output is not deterministic. A case
 passes on a majority of repeats, is reported flaky on a minority, and fails on
@@ -15,50 +18,9 @@ import pytest
 from tests.eval.cases import CASES
 from tests.eval.conftest import ENGINE
 from tests.eval.scorecard import RESULTS
+from tests.eval.scoring import evaluate
 
 REPEATS = int(os.getenv("LITHE_EVAL_REPEATS", "3"))
-
-
-def _evaluate(case, outcome):
-    """Return None if this run satisfied the case, else a reason string."""
-    text = (outcome["text"] or "").lower()
-    tool_names = outcome["tool_names"]
-
-    # An unintended engine switch would score a harness problem as a model
-    # failure. Which engine counts as correct depends on what is being scored.
-    if outcome["engine"] != ENGINE:
-        return f"ran on {outcome['engine']}, not {ENGINE} (check the logs)"
-
-    expected_tool = case.get("expect_tool")
-    if expected_tool:
-        if expected_tool not in tool_names:
-            return f"expected tool {expected_tool}, got {tool_names or 'none'}"
-        predicate = case.get("args_predicate")
-        if predicate:
-            args = next(a for n, a in outcome["tool_calls"] if n == expected_tool)
-            if not predicate(args):
-                return f"{expected_tool} called with unusable args: {args}"
-
-    missing = [t for t in case.get("expect_all_tools", []) if t not in tool_names]
-    if missing:
-        detail = f"executed {tool_names or 'nothing'}"
-        requested = outcome.get("requested_names") or []
-        if requested != tool_names:
-            detail += f" (model asked for {requested})"
-        return f"never ran {', '.join(missing)}; {detail}"
-
-    if case.get("expect_no_tool") and tool_names:
-        return f"expected no tool call, got {tool_names}"
-
-    for needle in case.get("must_contain", []):
-        if needle.lower() not in text:
-            return f"answer missing {needle!r}"
-
-    for needle in case.get("must_not_contain", []):
-        if needle.lower() in text:
-            return f"answer contained forbidden {needle!r}"
-
-    return None
 
 
 @pytest.mark.eval
@@ -71,7 +33,7 @@ def test_capability(case, harness):
         except Exception as exc:  # a crash is a failed run, not a failed suite
             failures.append(f"raised {type(exc).__name__}: {exc}")
             continue
-        reason = _evaluate(case, outcome)
+        reason = evaluate(case, outcome, ENGINE)
         if reason:
             failures.append(reason)
 
