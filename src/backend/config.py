@@ -67,7 +67,12 @@ TOKEN_BUDGET_WARNING: int = int(os.getenv("TOKEN_BUDGET_WARNING", "1500000"))
 # Lithe falls back to a local Ollama model. These values are configurable
 # via .env so users can point to different models or remote Ollama instances.
 OLLAMA_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.1")
+# llama3.2 rather than llama3.1: the default has to name a model people
+# actually have, because a default naming an unpulled model is how the
+# fallback sat broken for weeks -- the health check passed, the real
+# request came back "model not found", and every Gemini outage looked like
+# a Lithe bug. It is also the model the capability evaluation is scored on.
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
 OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "60"))
 
 # ---------------------------------------------------------------------------

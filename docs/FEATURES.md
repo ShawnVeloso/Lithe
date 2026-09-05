@@ -1,6 +1,6 @@
 # docs/FEATURES.md — Lithe Feature Checklist
 
-> Dense checklist of implemented features and capabilities. Historical logs in [`docs/ARCHIVE_LOGS.md`](file:///d:/Lithe/docs/ARCHIVE_LOGS.md).
+> Dense checklist of implemented features and capabilities. Historical logs in [`docs/ARCHIVE_LOGS.md`](ARCHIVE_LOGS.md).
 
 ---
 
