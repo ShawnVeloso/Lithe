@@ -1,21 +1,19 @@
 # Lithe — Agent Log Index
 
 > **Purpose:** Persistent state-tracking for AI agents and the lead developer.
-> **Last Updated:** 2026-09-05T23:55 (PHT)
+> **Last Updated:** 2026-09-06T02:05 (PHT)
 
 ---
 
 ## Current Focus
-- **Working on:** nothing — fallback-correctness pass complete, on `fix/fallback-correctness`
-- **Baseline:** **79% (14 scored cases) on Ollama/llama3.2, under a fixed seed.** The evaluation
-  is now reproducible: two consecutive runs give identical scorecards, and a seeded run of the
-  pre-fix baseline matched this branch exactly. Earlier unseeded numbers (79/86/64) are not
+- **Working on:** nothing — result-level assertions pass complete
+- **Baseline:** **79% (14 scored cases) on Ollama/llama3.2, under a fixed seed** — and it now
+  means more than it did. The same 79% was re-measured with result-level assertions in place,
+  so the tool-selection cases are no longer satisfied by a tool merely being *called*. The
+  evaluation is reproducible: two consecutive runs give identical scorecards, and a seeded run
+  of the pre-fix baseline matched exactly. Earlier unseeded numbers (79/86/64) are not
   comparable to it or to each other.
 - **Next up:** SQLite FTS5 content indexing — the only remaining gap that is Lithe's own fault.
-- **Also worth doing:** the eval cannot see whether a tool's *result* reached the user.
-  `select-search` and `select-chart` assert only that the tool was called, which is why two
-  real defects (correct answers replaced by a bogus ERROR, charts announced but never
-  delivered) scored as passes. Cases need result-level assertions.
 - **Blocked on:** nothing
 
 > **Read the score carefully.** It is a fixed *sample* of model behaviour, not an average.
@@ -64,7 +62,7 @@
 | `GEMINI_API_KEY` | `.env` file | User-provided |
 | `GEMINI_MODEL` | `config.py` | `gemini-3.6-flash` |
 | `OLLAMA_URL` | `.env` / default | `http://localhost:11434` |
-| `OLLAMA_MODEL` | `.env` / default | `llama3.1` |
+| `OLLAMA_MODEL` | `.env` / default | `llama3.2` |
 | `OLLAMA_TIMEOUT` | `.env` / default | `60` seconds |
 | `INDEX_WHITELIST` | `.env` | Comma-separated directories (e.g. `D:\`) |
 | `SAFEWORD` | `system_prompt.py` | `"Override Lithe"` |
@@ -77,7 +75,7 @@
 
 ## Log Entries
 
-> Older logs archived in [ARCHIVE_LOGS.md](file:///d:/Lithe/docs/ARCHIVE_LOGS.md).
+> Older logs archived in [ARCHIVE_LOGS.md](../ARCHIVE_LOGS.md).
 
 | Date | Agent | Action |
 |------|-------|--------|
@@ -109,3 +107,5 @@
 | 2026-09-05 | Claude Opus 5 | **Fix: version numbers were treated as filenames.** "I am on python 3.11 now" matched `3.11`, which was looked up, not found, and glued a "not found in the indexed directories" note onto an ordinary question — telling the model a file was missing that the user had never mentioned. An all-digit extension is the tell, so `.7z` and `.mp3` still resolve. The cost is that a file genuinely named `report.2024` is missed, which is stated in a test rather than left to be discovered. |
 | 2026-09-05 | Claude Opus 5 | **Refactor: the tool wrappers are defined once.** `chat()` and `chat_stream()` each carried a byte-identical 100-line block defining the ten tool closures — the duplication that let the declared names drift from the dispatch map and leave 5 of 9 tools unreachable on Gemini. Both now call `_build_tool_functions()`. Docstrings are the descriptions the model receives and each closure's `__name__` is the name it is declared under, so both are load-bearing and were verified unchanged for all ten. A new test asserts the two entry points declare identical names *and* identical wording, so a reintroduced copy fails rather than drifting quietly. Net 86 lines removed. Suite 135 → 147 passing; the three new Ollama tests were confirmed failing against the previous source. Branch: `fix/fallback-correctness`. |
 | 2026-09-05 | Claude Opus 5 | **The scorecard was not reproducible, and that invalidated how it had been read.** Three runs of one commit scored **86% → 64% → 86%**. Hashing the outgoing `/api/chat` payload (messages plus tool schema) on both commits proved the requests byte-identical, so the swing was sampling — noise indistinguishable from a regression, which is the one thing a measuring instrument must never do. The Gemini path pins `temperature=0.7`; the Ollama payload set no options at all. `brain.OLLAMA_OPTIONS` is empty in production, leaving shipped behaviour untouched, and the evaluation sets `seed = LITHE_EVAL_SEED + repeat` — same payload plus same seed gives the same output, while the seed still varies per repeat so repeats sample different outputs. Verified: two consecutive seeded runs produced identical scorecards, and a seeded run of the pre-fix baseline scored identically to this branch, confirming the four fixes cause no regression. **Seeded baseline is 79%**, and the earlier 79% → 86% claim is withdrawn: two unseeded runs cannot establish a 7-point move across a 22-point observed range. Note also that none of this pass's four fixes can move the score at all — `select-search` and `select-chart` assert only that a tool was called, never that its result reached the user, and both bugs lived entirely after the tool returned. |
+| 2026-09-06 | Claude Opus 5 | **Result-level assertions (the evaluation could not see whether a tool's result reached the user).** The scorecard had twice reported a *pass* over a real defect, and both times the fault was in the scoring rules rather than in Lithe. Both misses share a shape: a case asserted a tool was *called* and stopped there, so everything after the tool returned was invisible. `select-search` passed while the hallucination guard was replacing correct answers with *"ERROR: The LLM generated a narrative..."*, and `select-chart` passed while charts were generated and then dropped — the tool ran, the image reached nobody. Calling a tool is not the capability; the user receiving its result is. Scoring moved out of the test module into `tests/eval/scoring.py` and now runs in three layers. **Invariants** apply to every case whether it asks for them or not, because the next case someone writes should not have to remember them: the answer is not one of Lithe's own failure strings (`LITHE_FAILURE_TEXT` — the guard ERROR, `chat()`'s internal-error branch, an empty Ollama reply), and no tool result is `Error: Tool X not recognized.` — the exact shape of the defect that left 5 of 9 tools unreachable on Gemini and which every affected case scored as the *model* choosing badly. **Call-level** checks are unchanged. **Result-level** adds `result_must_contain` (the tool did its job), `expect_chart` (a real `data:image` URI reached the caller, not the model's word that one was sent), paired with `must_contain` (the user was told) — when only one fails, the detail says which half broke. Both recorders now harvest tool *results* from the next outgoing request (Gemini's `function_response` parts, Ollama's `role: "tool"` messages), so production code still does not know it is being measured. Verified against the previous source: the old scorer returned `None` — a pass — for all four defect scenarios; the new one fails all four. `tests/test_eval_scoring.py` pins them in the *normal* suite, so a mistake in the instrument shows up on every run rather than only when someone opts into a live evaluation. **The seeded score is unchanged at 79%**, which is the result worth reading: five tool-selection cases were strengthened and all five still pass, so last pass's guard and chart fixes do deliver end-to-end — something the old instrument was structurally incapable of showing. Suite 147 → 170 passing. |
+| 2026-09-06 | Claude Opus 5 | **Config drift.** `OLLAMA_MODEL` still defaulted to `llama3.1` while everything measured runs on `llama3.2`. A default naming an unpulled model is exactly how the fallback sat broken for weeks — the health check passed, the real request came back `model not found`, and every Gemini outage looked like a Lithe bug. Corrected in `config.py` and in the three places `.env.example` repeats it. Separately, five `file:///d:/Lithe/...` links across `AGENT_PLAYBOOK.md`, `FEATURES.md`, `INDEX.md` and `CHANGELOG.md` pointed at a directory the project has not lived in since it moved to `d:\projects\Lithe`; they are now relative, so they survive the next move. One consequence had to be chased into the UI: `SystemPanel.tsx` showed a "Tool Execution Limited (Local Fallback)" badge for any model that was not `llama3.1` or `mistral`, so the new default would have tripped it — telling every default user their tools were dead on the model the evaluation scores 79% on. The check now runs against a named list of tool-capable models, and the tooltip stops claiming Lithe disables anything: it offers every tool to every model, and a model without native tool calling simply describes an action instead of requesting it. |
