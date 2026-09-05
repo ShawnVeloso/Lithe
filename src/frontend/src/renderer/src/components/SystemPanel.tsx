@@ -3,6 +3,24 @@ import type { StatusResponse } from '../env.d'
 import type { LogEvent } from '../App'
 import SettingsPanel from './SettingsPanel'
 
+// Ollama models known to support native tool calling. The badge below warns
+// when the fallback is running on something outside this list, so the list has
+// to include the shipped default — llama3.2 is what OLLAMA_MODEL defaults to in
+// config.py and what the capability evaluation is scored on, and the badge was
+// telling those users their tools were dead. Note llama3 (without a point
+// release) is deliberately absent: tool calling arrived with llama3.1.
+const TOOL_CAPABLE_OLLAMA_MODELS = [
+  'llama3.1',
+  'llama3.2',
+  'llama3.3',
+  'mistral',
+  'qwen2.5',
+  'command-r'
+]
+
+const supportsTools = (model: string): boolean =>
+  TOOL_CAPABLE_OLLAMA_MODELS.some((known) => model.includes(known))
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -215,12 +233,12 @@ function SystemPanel({ isOnline, safewordActive, status, logs }: SystemPanelProp
         <span className="system-separator" />
 
         {/* Ollama Limitation Badge */}
-        {status?.active_engine === 'ollama' && status?.ollama_model && !status.ollama_model.includes('llama3.1') && !status.ollama_model.includes('mistral') && (
+        {status?.active_engine === 'ollama' && status?.ollama_model && !supportsTools(status.ollama_model) && (
           <>
             <div className="system-stat">
               <span
                 className="system-stat__value system-stat__value--accent"
-                title="File searching and modification are disabled on this local fallback model"
+                title="Lithe still offers every tool to this model, but models without native tool calling tend to describe an action instead of requesting it"
               >
                 Tool Execution Limited (Local Fallback)
               </span>

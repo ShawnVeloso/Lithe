@@ -1,8 +1,8 @@
 # docs/AGENT_PLAYBOOK.md — Lithe AI Agent Behavioral Playbook
 
 > **Strict Behavioral Rules & Operating Boundaries for AI Agents.**
-> Consult [ARCHITECTURE.md](file:///d:/Lithe/docs/ARCHITECTURE.md) for system architecture and tech stack details.
-> Consult [.agents/AGENTS.md](file:///d:/Lithe/.agents/AGENTS.md) for context acquisition and logging rules.
+> Consult [ARCHITECTURE.md](ARCHITECTURE.md) for system architecture and tech stack details.
+> Consult [.agents/AGENTS.md](../.agents/AGENTS.md) for context acquisition and logging rules.
 
 ---
 
