@@ -375,6 +375,34 @@ async def set_llm_config(request: LLMConfigRequest):
     return await get_llm_config()
 
 
+@app.get("/api/config/ollama-models")
+async def get_ollama_models():
+    """Which Ollama models this machine can actually serve.
+
+    `reachable` is deliberately separate from an empty `installed`: "Ollama is
+    not running" and "Ollama is running with nothing pulled" need different
+    things from the user, and collapsing them is exactly the conflation that
+    let the fallback look healthy for weeks while it was dead -- the readiness
+    check asked only whether /api/tags answered, never whether the configured
+    model was there.
+
+    `current_installed` answers that same question for the model in use, using
+    the matching rule that knows `qwen2.5` means `qwen2.5:latest`.
+    """
+    import src.backend.brain as brain
+
+    installed = brain._ollama_models()
+    current = brain.OLLAMA_MODEL
+    return {
+        "reachable": installed is not None,
+        "installed": sorted(installed) if installed else [],
+        "current": current,
+        "current_installed": bool(
+            installed is not None and brain._model_is_pulled(current, installed)
+        ),
+    }
+
+
 class SafewordToggleRequest(BaseModel):
     active: bool
 
