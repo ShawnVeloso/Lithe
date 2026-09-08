@@ -15,8 +15,9 @@ import os
 
 import pytest
 
+from tests.eval import trace
 from tests.eval.cases import CASES
-from tests.eval.conftest import ENGINE
+from tests.eval.conftest import ENGINE, EVAL_SEED, _configured_model
 from tests.eval.scorecard import RESULTS
 from tests.eval.scoring import evaluate
 
@@ -31,11 +32,16 @@ def test_capability(case, harness):
         try:
             outcome = harness.ask(case["prompt"], repeat=repeat)
         except Exception as exc:  # a crash is a failed run, not a failed suite
-            failures.append(f"raised {type(exc).__name__}: {exc}")
+            reason = f"raised {type(exc).__name__}: {exc}"
+            failures.append(reason)
+            _trace(case, None, repeat, reason)
             continue
         reason = evaluate(case, outcome, ENGINE)
         if reason:
             failures.append(reason)
+        # After scoring, and given the same reason the scorecard will show, so
+        # the trace can never disagree with the verdict it explains.
+        _trace(case, outcome, repeat, reason)
 
     passed = REPEATS - len(failures)
     if passed == REPEATS:
@@ -64,4 +70,19 @@ def test_capability(case, harness):
 
     assert verdict == "pass", (
         f"{case['id']} scored {passed}/{REPEATS}: " + "; ".join(failures[:2])
+    )
+
+
+def _trace(case, outcome, repeat, reason):
+    """Write this repeat to the diagnostic trace, when one was asked for."""
+    trace.record(
+        case,
+        outcome,
+        repeat,
+        reason=reason,
+        engine=ENGINE,
+        model=_configured_model(),
+        # The seed the harness actually pinned for this repeat; Ollama only,
+        # since the Gemini path sets no options.
+        seed=EVAL_SEED + repeat if ENGINE == "ollama" else None,
     )

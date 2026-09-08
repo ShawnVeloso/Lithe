@@ -10,8 +10,14 @@ nothing. A plain module is imported once and shared by both.
 RESULTS = []
 
 
-def render(write, engine="?", aborted=None):
-    """Print the capability scorecard. `write` takes one line of text."""
+def render(write, engine="?", model="?", seed=None, aborted=None, trace_path=None):
+    """Print the capability scorecard. `write` takes one line of text.
+
+    The header names the model and seed as well as the engine. Two runs of
+    different models are otherwise indistinguishable in scrollback, and a
+    cross-model comparison -- which is a statement about the models, not about
+    Lithe -- must not be mistakable for a cross-branch one.
+    """
     if not RESULTS:
         if aborted:
             write("")
@@ -21,6 +27,7 @@ def render(write, engine="?", aborted=None):
     write("")
     write("=" * 72)
     write(f"LITHE CAPABILITY SCORECARD  (engine: {engine})")
+    write(f"  model: {model}    seed: {seed if seed is not None else 'unset'}")
     write("=" * 72)
 
     categories = {}
@@ -61,5 +68,8 @@ def render(write, engine="?", aborted=None):
 
     write("")
     write("  The absolute number means little. Compare it across branches,")
-    write("  and only against runs of the same engine.")
+    write("  and only against runs of the same engine, model and seed.")
+    if trace_path:
+        # A trace nobody can find explains nothing.
+        write(f"  Full per-repeat trace: {trace_path}")
     write("=" * 72)
