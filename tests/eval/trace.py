@@ -74,6 +74,7 @@ def record(case, outcome, repeat, reason=None, engine=None, model=None, seed=Non
         "text": _clip((outcome or {}).get("text")),
         "tool_names": (outcome or {}).get("tool_names"),
         "requested_names": (outcome or {}).get("requested_names"),
+        "proposed_names": (outcome or {}).get("proposed_names"),
         "tool_calls": [
             [name, args] for name, args in (outcome or {}).get("tool_calls") or []
         ],

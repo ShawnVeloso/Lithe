@@ -120,12 +120,21 @@ def test_a_stopped_server_is_reported_as_stopped(monkeypatch):
 # healthy while it was dead.
 
 
+def entry(name, family="llama"):
+    """One /api/tags row, shaped as Ollama sends it."""
+    return {"name": name, "details": {"family": family, "families": [family]}}
+
+
 def models_client(monkeypatch, installed, current="llama3.2"):
+    """`installed` is a list of names, or None for an unreachable Ollama."""
     from fastapi.testclient import TestClient
     from src.backend.server import app
     import src.backend.brain as brain
 
-    monkeypatch.setattr(brain, "_ollama_models", lambda: installed)
+    catalog = None if installed is None else [
+        n if isinstance(n, dict) else entry(n) for n in installed
+    ]
+    monkeypatch.setattr(brain, "_ollama_catalog", lambda: catalog)
     monkeypatch.setattr(brain, "OLLAMA_MODEL", current)
     return TestClient(app)
 
@@ -178,3 +187,45 @@ def test_the_listing_follows_a_live_model_change(monkeypatch):
     got = client.get("/api/config/ollama-models").json()
     assert got["current"] == "qwen2.5"
     assert got["current_installed"] is True
+
+
+def test_embedding_models_are_reported_not_hidden(monkeypatch):
+    """all-minilm sits in /api/tags beside llama3.2 and cannot chat at all.
+
+    Reported rather than filtered out: a user who has configured one needs to
+    be told which entry is the problem, and a name that silently vanishes from
+    the list explains nothing.
+    """
+    client = models_client(
+        monkeypatch,
+        [entry("llama3.2:latest"), entry("all-minilm:latest", family="bert")],
+    )
+    got = client.get("/api/config/ollama-models").json()
+    assert got["installed"] == ["all-minilm:latest", "llama3.2:latest"]
+    assert got["embedding_only"] == ["all-minilm:latest"]
+
+
+def test_a_chat_model_is_never_called_embedding_only(monkeypatch):
+    """The denylist errs toward showing a model: a hidden one cannot be reached."""
+    client = models_client(
+        monkeypatch,
+        [entry("qwen2.5:latest", family="qwen2"), entry("mystery:latest", family="")],
+    )
+    assert client.get("/api/config/ollama-models").json()["embedding_only"] == []
+
+
+def test_embedding_detection_reads_the_families_list_too(monkeypatch):
+    """Ollama reports both `family` and `families`; either may carry it."""
+    import src.backend.brain as brain
+
+    assert brain._is_embedding_only(
+        {"name": "x", "details": {"families": ["bert"]}}
+    ) is True
+    assert brain._is_embedding_only({"name": "x", "details": {}}) is False
+    assert brain._is_embedding_only({"name": "x"}) is False
+
+
+def test_an_unreachable_ollama_reports_no_embedding_models(monkeypatch):
+    got = models_client(monkeypatch, None).get("/api/config/ollama-models").json()
+    assert got["reachable"] is False
+    assert got["embedding_only"] == []

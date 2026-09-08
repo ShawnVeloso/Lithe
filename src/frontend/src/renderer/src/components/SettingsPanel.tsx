@@ -28,6 +28,8 @@ const isPulled = (model: string, installed: string[]): boolean => {
 interface OllamaModels {
   reachable: boolean
   installed: string[]
+  /** Installed, but embedding-only — cannot answer a prompt at all. */
+  embedding_only: string[]
   current: string
   current_installed: boolean
 }
@@ -65,7 +67,13 @@ function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element {
         setCustom(!m.reachable || !m.installed.includes(m.current))
       })
       .catch(() => {
-        setModels({ reachable: false, installed: [], current: '', current_installed: false })
+        setModels({
+          reachable: false,
+          installed: [],
+          embedding_only: [],
+          current: '',
+          current_installed: false
+        })
         setCustom(true)
       })
   }, [])
@@ -96,6 +104,10 @@ function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element {
   } else if (models && trimmed && !isPulled(trimmed, models.installed)) {
     const installed = models.installed.join(', ') || 'nothing'
     modelNotice = `"${trimmed}" is not pulled. Installed: ${installed}. Run \`ollama pull ${trimmed}\` — until then the fallback cannot answer.`
+  } else if (models && models.embedding_only.includes(trimmed)) {
+    // Ahead of the tool-calling notice: this one cannot answer at all, so
+    // telling the user it merely describes actions would understate it.
+    modelNotice = `"${trimmed}" is an embedding model. It can index text but cannot answer a prompt, so the fallback will not work with it selected.`
   } else if (trimmed && !supportsTools(trimmed)) {
     modelNotice = `"${trimmed}" has no native tool calling. Every tool is still offered to it, but it will describe an action instead of performing one.`
   }
@@ -132,7 +144,11 @@ function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element {
               {models.installed.map((name) => (
                 <option key={name} value={name}>
                   {name}
-                  {supportsTools(name) ? '' : '  (no tool calling)'}
+                  {models.embedding_only.includes(name)
+                    ? '  (embedding only — cannot chat)'
+                    : supportsTools(name)
+                      ? ''
+                      : '  (no tool calling)'}
                 </option>
               ))}
               <option value={CUSTOM}>custom…</option>
