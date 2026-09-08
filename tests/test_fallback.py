@@ -109,3 +109,72 @@ def test_a_stopped_server_is_reported_as_stopped(monkeypatch):
 
     assert "not running" in message
     assert "ollama serve" in message
+
+
+# --- GET /api/config/ollama-models ------------------------------------------
+#
+# The selector's whole point is that a model you cannot serve is visibly a
+# model you cannot serve. That requires the endpoint to keep "Ollama is down"
+# and "Ollama is up with nothing pulled" apart, because they need different
+# things from the user, and conflating them is what let the fallback look
+# healthy while it was dead.
+
+
+def models_client(monkeypatch, installed, current="llama3.2"):
+    from fastapi.testclient import TestClient
+    from src.backend.server import app
+    import src.backend.brain as brain
+
+    monkeypatch.setattr(brain, "_ollama_models", lambda: installed)
+    monkeypatch.setattr(brain, "OLLAMA_MODEL", current)
+    return TestClient(app)
+
+
+def test_lists_installed_models_and_confirms_the_current_one(monkeypatch):
+    client = models_client(monkeypatch, ["llama3:latest", "llama3.2:latest"])
+    got = client.get("/api/config/ollama-models").json()
+    assert got["reachable"] is True
+    # Sorted, so the dropdown's order does not depend on Ollama's reply order.
+    assert got["installed"] == ["llama3.2:latest", "llama3:latest"]
+    assert got["current"] == "llama3.2"
+    # `llama3.2` is `llama3.2:latest`; the endpoint must not report the shipped
+    # default as missing over a tag suffix.
+    assert got["current_installed"] is True
+
+
+def test_flags_a_current_model_that_is_not_pulled(monkeypatch):
+    """The exact configuration that left the fallback silently dead."""
+    client = models_client(monkeypatch, ["llama3.2:latest"], current="llama3.1")
+    got = client.get("/api/config/ollama-models").json()
+    assert got["reachable"] is True
+    assert got["current_installed"] is False
+    assert got["installed"] == ["llama3.2:latest"]   # so the UI can name what is
+
+
+def test_unreachable_is_not_the_same_as_nothing_installed(monkeypatch):
+    down = models_client(monkeypatch, None).get("/api/config/ollama-models").json()
+    empty = models_client(monkeypatch, []).get("/api/config/ollama-models").json()
+
+    assert down["reachable"] is False
+    assert empty["reachable"] is True
+    assert down["installed"] == empty["installed"] == []
+    # Same list, different diagnosis -- which is the point of the flag.
+    assert down != empty
+
+
+def test_an_unreachable_ollama_never_claims_the_model_is_installed(monkeypatch):
+    client = models_client(monkeypatch, None)
+    assert client.get("/api/config/ollama-models").json()["current_installed"] is False
+
+
+def test_the_listing_follows_a_live_model_change(monkeypatch):
+    """POST /api/config/llm rebinds brain.OLLAMA_MODEL; the listing must see it."""
+    import src.backend.brain as brain
+
+    client = models_client(monkeypatch, ["llama3.2:latest", "qwen2.5:latest"])
+    assert client.get("/api/config/ollama-models").json()["current"] == "llama3.2"
+
+    monkeypatch.setattr(brain, "OLLAMA_MODEL", "qwen2.5")
+    got = client.get("/api/config/ollama-models").json()
+    assert got["current"] == "qwen2.5"
+    assert got["current_installed"] is True

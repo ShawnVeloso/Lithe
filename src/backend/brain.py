@@ -107,6 +107,7 @@ except Exception as e:
     _client = None
 
 # --- Feature 4 (Tier 2): Persistent Chat History ---
+import base64
 import uuid
 import json
 from src.backend.memory import save_message, get_chat_history, get_latest_conversation_id, get_app_state, set_app_state
@@ -135,14 +136,21 @@ def _load_history():
         # rebuilding Content objects for all of it is wasted startup work.
         rows = rows[-MAX_HISTORY_MESSAGES:]
 
+    # Rows written before signatures were persisted, and every row from a
+    # model that does not produce them, reload with signature=None. They are
+    # replayed as they always were: absent is not the same as invalid, and
+    # dropping the tool traffic of a non-thinking model would break a path
+    # that works.
     for row in rows:
         parts = []
         if row["content"]:
             parts.append(types.Part.from_text(text=row["content"]))
         if row["tool_proposal_json"]:
             for call_data in _as_list(json.loads(row["tool_proposal_json"])):
-                parts.append(types.Part.from_function_call(
-                    name=call_data["name"], args=call_data["args"]
+                parts.append(_function_call_part(
+                    call_data["name"],
+                    call_data["args"],
+                    _decode_signature(call_data.get("thought_signature")),
                 ))
         if row["tool_resolution"]:
             for res_data in _as_list(json.loads(row["tool_resolution"])):
@@ -183,6 +191,63 @@ def _as_list(decoded):
     return decoded if isinstance(decoded, list) else [decoded]
 
 
+def _function_call_part(name, args, signature=None):
+    """A function_call part that carries its thought signature back to Gemini.
+
+    Thinking models return an opaque `thought_signature` alongside each
+    function call, and reject the conversation outright if it is missing when
+    that call is replayed:
+
+        400 INVALID_ARGUMENT ... Function call is missing a thought_signature
+        in functionCall parts.
+
+    `Part.from_function_call()` cannot carry one, so every place that rebuilt a
+    call from its name and args -- the streaming turn, and every reload from
+    SQLite -- produced a payload the API refuses. The whole conversation then
+    fails, which surfaces as a transport error and a silent demotion to Ollama:
+    a user whose Gemini key is fine spends the rest of the session on the
+    fallback, for a reason nothing in the UI explains.
+    """
+    part = types.Part(function_call=types.FunctionCall(name=name, args=args))
+    if signature:
+        part.thought_signature = signature
+    return part
+
+
+def _call_parts_of(chunk):
+    """The function_call parts of one streamed chunk, signatures intact.
+
+    `chunk.function_calls` is a convenience view that discards the part it came
+    from, and with it the signature.
+    """
+    parts = []
+    for candidate in getattr(chunk, "candidates", None) or []:
+        content = getattr(candidate, "content", None)
+        for part in (getattr(content, "parts", None) or []):
+            if part.function_call:
+                parts.append(part)
+    return parts
+
+
+def _encode_signature(part):
+    """Signatures are opaque bytes; JSON needs text."""
+    signature = getattr(part, "thought_signature", None)
+    return base64.b64encode(signature).decode("ascii") if signature else None
+
+
+def _decode_signature(stored):
+    """None for rows written before signatures were persisted."""
+    if not stored:
+        return None
+    try:
+        return base64.b64decode(stored)
+    except Exception:
+        # An unreadable signature reloads as an unsigned call rather than
+        # taking the whole conversation down with it.
+        logger.warning("Discarding an unreadable thought signature.")
+        return None
+
+
 def _save_content(content_obj: types.Content):
     """Persist one turn, keeping every function call and response it carries.
 
@@ -203,6 +268,9 @@ def _save_content(content_obj: types.Content):
                 calls.append({
                     "name": part.function_call.name,
                     "args": dict(part.function_call.args or {}),
+                    # Without this the turn reloads unsigned, and Gemini
+                    # rejects the whole conversation on the next request.
+                    "thought_signature": _encode_signature(part),
                 })
             elif part.function_response:
                 resolutions.append({
@@ -1251,6 +1319,10 @@ def chat_stream(user_message: str):
         # --- Stream from Gemini ---
         accumulated_text = ""
         accumulated_function_calls = []
+        # The parts themselves, not just the calls read off them: a part
+        # carries the thought_signature that Gemini requires back, and
+        # Part.from_function_call() cannot reproduce it.
+        accumulated_call_parts = []
 
         stream = _client.models.generate_content_stream(
             model=GEMINI_MODEL,
@@ -1269,6 +1341,7 @@ def chat_stream(user_message: str):
             # Accumulate function calls (typically in the last chunk)
             if chunk.function_calls:
                 accumulated_function_calls.extend(chunk.function_calls)
+                accumulated_call_parts.extend(_call_parts_of(chunk))
 
         # --- Handle function calls after stream completes ---
         if accumulated_function_calls:
@@ -1279,12 +1352,21 @@ def chat_stream(user_message: str):
                 or accumulated_function_calls[0]
             )
 
-            # Rebuild the model turn from the streamed pieces.
+            # Rebuild the model turn from the streamed pieces, reusing the
+            # original call parts so their thought signatures survive. Falling
+            # back to a rebuilt part keeps a chunk shape that carried no parts
+            # working; it will be rejected if the model wanted a signature, but
+            # that is strictly better than dropping the call.
             model_parts = []
             if accumulated_text:
                 model_parts.append(types.Part.from_text(text=accumulated_text))
-            for fc in accumulated_function_calls:
-                model_parts.append(types.Part.from_function_call(name=fc.name, args=fc.args))
+            if len(accumulated_call_parts) == len(accumulated_function_calls):
+                model_parts.extend(accumulated_call_parts)
+            else:
+                model_parts.extend(
+                    _function_call_part(fc.name, fc.args)
+                    for fc in accumulated_function_calls
+                )
             model_content = types.Content(role="model", parts=model_parts)
 
             if call.name in MUTATING_TOOLS:

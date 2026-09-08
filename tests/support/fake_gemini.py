@@ -41,6 +41,22 @@ def function_call_response(name: str, args: dict) -> types.GenerateContentRespon
     )
 
 
+def signed_function_call_response(name: str, args: dict, signature: bytes):
+    """A model turn whose function call carries a thought signature.
+
+    Thinking models attach one to every call and reject the conversation if it
+    does not come back. Built as a real `types.Part` so the test exercises the
+    same field the SDK sends.
+    """
+    part = types.Part(function_call=types.FunctionCall(name=name, args=args))
+    part.thought_signature = signature
+    return types.GenerateContentResponse(
+        candidates=[
+            types.Candidate(content=types.Content(role="model", parts=[part]))
+        ]
+    )
+
+
 class _Models:
     def __init__(self, owner: "ScriptedGeminiClient"):
         self._owner = owner
