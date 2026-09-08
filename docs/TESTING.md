@@ -153,6 +153,23 @@ accident. A seeded score is a fixed sample of model behaviour, not an average
 of it: treat a one- or two-case move as within the sample, and prefer a
 mechanical explanation (diff the payload) over assuming a real regression.
 
+### A tool description is part of the payload
+
+Editing a tool's description resamples the whole suite. The seed pins sampling
+for an *identical* payload; it cannot pin it across a schema edit, so a score
+measured before and after such a change is not a before/after on Lithe.
+
+This is not theoretical. Adding content search to `search_files` came with a
+markedly longer description and the score fell to **69%**, tool selection
+dropping 4/6 → 2/6 — llama3.2 had begun emitting tool calls as plain text
+(`{"name": "profile_data", ...}`) and inventing tools that do not exist
+(`add`, `math_eval`). Tightening the description to roughly its original length
+recovered tool selection to 4/6 on an identical subset, for **81%**.
+
+On a small local model, schema wording is a real input to tool selection. Keep
+tool descriptions short, and when one changes, expect to re-measure rather than
+compare.
+
 ### The corpus
 
 It runs against a **synthetic corpus** built in a temp directory
@@ -261,8 +278,8 @@ cases someone chose to write. Do not quote it as a fact about Lithe. Its only
 job is the **delta**: run it before a change and after, and see which cases
 moved.
 
-Cases marked `known_gap` are documented limitations (no content index; a
-multi-step chain the shipped default model will not attempt). They are
+Cases marked `known_gap` are documented limitations — currently one: a
+multi-step chain the shipped default model will not attempt. They are
 excluded from the score and reported
 separately, so they show up as capability that is missing rather than as a
 regression. When one flips to "now passing", that gap has been closed.

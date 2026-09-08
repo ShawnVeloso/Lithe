@@ -391,11 +391,20 @@ async def get_ollama_models():
     """
     import src.backend.brain as brain
 
-    installed = brain._ollama_models()
+    catalog = brain._ollama_catalog()
+    installed = [m.get("name", "") for m in catalog] if catalog is not None else None
+    # Reported rather than filtered out. Ollama lists embedding models beside
+    # chat models and picking one breaks the fallback outright, but a user who
+    # has configured one needs to be told which entry is the problem -- a name
+    # that silently vanishes from the list explains nothing.
+    embedding_only = sorted(
+        m.get("name", "") for m in (catalog or []) if brain._is_embedding_only(m)
+    )
     current = brain.OLLAMA_MODEL
     return {
         "reachable": installed is not None,
         "installed": sorted(installed) if installed else [],
+        "embedding_only": embedding_only,
         "current": current,
         "current_installed": bool(
             installed is not None and brain._model_is_pulled(current, installed)

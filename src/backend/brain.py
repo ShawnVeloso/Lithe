@@ -40,7 +40,12 @@ from src.backend.context_budget import (
 )
 from src.backend.ollama_bridge import call_name_and_args, to_ollama_messages
 from src.backend.tools import execute_rename, execute_delete, execute_write, execute_read
-from src.backend.memory import search_files_by_name, record_action, insert_auto_summary
+from src.backend.memory import (
+    search_files_by_name,
+    search_files_by_content,
+    record_action,
+    insert_auto_summary,
+)
 from src.backend.data_tools import profile_data as _profile_data, inline_chart as _inline_chart
 from src.backend.watch_rules import (
     create_watch_rule as _create_watch_rule,
@@ -297,15 +302,48 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 # Ollama fallback (Phase 2: Reliability)
 # ---------------------------------------------------------------------------
-def _ollama_models() -> list[str] | None:
-    """Model tags the local Ollama has pulled, or None if it is unreachable."""
+# Model families that cannot hold a conversation at all. Ollama serves
+# embedding models from the same /api/tags list as chat models -- all-minilm
+# sits next to llama3.2 -- and picking one as OLLAMA_MODEL breaks the fallback
+# outright rather than merely degrading it.
+#
+# A denylist rather than an allowlist, deliberately: a chat model wrongly
+# hidden is a capability the user cannot reach and cannot diagnose, while an
+# embedding model wrongly shown is one confusing entry in a list. Erring
+# toward showing a model is the cheaper mistake.
+EMBEDDING_ONLY_FAMILIES = {"bert", "nomic-bert"}
+
+
+def _ollama_catalog() -> list[dict] | None:
+    """Raw model entries from /api/tags, or None if Ollama is unreachable.
+
+    The single HTTP path; _ollama_models() reads names off this so the two
+    cannot disagree about what is installed.
+    """
     try:
         resp = httpx.get(f"{OLLAMA_URL}/api/tags", timeout=5)
         if resp.status_code != 200:
             return None
-        return [m.get("name", "") for m in resp.json().get("models", [])]
+        return list(resp.json().get("models", []))
     except Exception:
         return None
+
+
+def _is_embedding_only(entry: dict) -> bool:
+    """True for a model that can embed text but cannot answer with it."""
+    details = entry.get("details") or {}
+    families = set(details.get("families") or [])
+    if details.get("family"):
+        families.add(details["family"])
+    return bool(families & EMBEDDING_ONLY_FAMILIES)
+
+
+def _ollama_models() -> list[str] | None:
+    """Model tags the local Ollama has pulled, or None if it is unreachable."""
+    catalog = _ollama_catalog()
+    if catalog is None:
+        return None
+    return [m.get("name", "") for m in catalog]
 
 
 def _model_is_pulled(model: str, available: list[str]) -> bool:
@@ -327,6 +365,10 @@ def _check_ollama_available() -> bool:
     """
     available = _ollama_models()
     return available is not None and _model_is_pulled(OLLAMA_MODEL, available)
+
+# Both halves of a search share one cap, so the count in the result text and
+# the number of rows listed can never disagree.
+SEARCH_RESULT_LIMIT = 20
 
 OLLAMA_TOOLS_SCHEMA = [
     {
@@ -392,7 +434,7 @@ OLLAMA_TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "search_files",
-            "description": "Finds indexed files whose FILENAME contains the keyword. Matches names only and cannot see inside files; use read_file on a returned path to inspect contents. Returns at most 20 matches, most recently modified first.",
+            "description": "Finds indexed files by FILENAME or by the text inside them. Filename matches come first, then files that mention the keyword, each with the passage that matched. Call read_file on a path to see more.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -843,28 +885,58 @@ def _build_tool_functions():
         return execute_write(path, content, mode, safeword_active=True, conversation_id=_current_conversation_id)
 
     def search_files(keyword: str) -> str:
-        """Finds indexed files whose FILENAME contains the keyword.
+        """Finds indexed files by FILENAME or by the text inside them.
 
-        This matches names only — it cannot see inside files. To answer a
-        question about a file's contents, call this to locate the file and then
-        call read_file on the path it returns. Returns at most 20 matches, most
-        recently modified first.
+        Filename matches come first, then files that mention the keyword, each
+        with the passage that matched. Call read_file on a path to see more.
 
         Args:
-            keyword: A word or fragment appearing in the filename.
+            keyword: A word or phrase to look for.
         """
-        results = search_files_by_name(keyword)
+        by_name = search_files_by_name(keyword)
+        named = {r["path"] for r in by_name}
+        # Name matches win a tie: a file called ZEPHYR-441.md answers
+        # "ZEPHYR-441" better than one mentioning it in passing, and an excerpt
+        # for a file already matched by name is noise.
+        by_content = [
+            r for r in search_files_by_content(keyword) if r["path"] not in named
+        ]
+        results = (by_name + by_content)[:SEARCH_RESULT_LIMIT]
+
+        def _record(outcome):
+            record_action(
+                "search_files",
+                json.dumps({"keyword": keyword}),
+                reversible=False,
+                decision_outcome="auto-executed",
+                execution_result=outcome,
+                conversation_id=_current_conversation_id,
+            )
+
         if not results:
-            record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result="success (no results)", conversation_id=_current_conversation_id)
+            _record("success (no results)")
             return f"No files found matching '{keyword}' in the indexed directories."
-        record_action("search_files", json.dumps({"keyword": keyword}), reversible=False, decision_outcome="auto-executed", execution_result=f"success ({len(results)} found)", conversation_id=_current_conversation_id)
+        _record(f"success ({len(results)} found)")
+
         lines = []
         for r in results:
             size_kb = round(r['size_bytes'] / 1024, 1)
             cat = f" [{r['category']}]" if r.get('category') else ""
-            lines.append(f"  {r['name']} ({size_kb} KB){cat} — {r['path']}")
-        capped = " (showing the 20 most recently modified; there may be more)" if len(results) >= 20 else ""
-        return f"Found {len(results)} file(s) matching '{keyword}'{capped}:\n" + "\n".join(lines)
+            line = f"  {r['name']} ({size_kb} KB){cat} — {r['path']}"
+            if r.get("excerpt"):
+                # Quoted so the model can answer from it, and labelled so it
+                # cannot present a matching passage as the whole file.
+                line += f"\n      matched text: \"{r['excerpt']}\""
+            lines.append(line)
+        capped = (
+            f" (showing the first {SEARCH_RESULT_LIMIT}; there may be more)"
+            if len(results) >= SEARCH_RESULT_LIMIT
+            else ""
+        )
+        return (
+            f"Found {len(results)} file(s) matching '{keyword}'{capped}:\n"
+            + "\n".join(lines)
+        )
 
     def read_file(path: str) -> str:
         """Reads the text contents of a file so you can answer questions about it.

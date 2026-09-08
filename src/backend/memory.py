@@ -56,6 +56,16 @@ def init_db() -> None:
         # --- Feature 3 (Tier 2): Undo Stack + Audit Log ---
         cursor.execute(
             """
+            CREATE VIRTUAL TABLE IF NOT EXISTS file_content USING fts5(
+                path UNINDEXED,
+                content,
+                tokenize='unicode61'
+            )
+            """
+        )
+
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS action_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tool_name TEXT NOT NULL,
@@ -211,6 +221,101 @@ def upsert_files(files: List[Dict[str, Any]]) -> None:
         conn.commit()
 
 
+def upsert_file_content(path: str, content: str) -> None:
+    """Store a file's searchable text, replacing whatever was there.
+
+    FTS5 has no UPSERT, so a reindex deletes the old row first -- without that
+    an edited file accumulates one searchable copy per index run and matches
+    against text it no longer contains.
+    """
+    with get_connection() as conn:
+        conn.execute("DELETE FROM file_content WHERE path = ?", (path,))
+        conn.execute(
+            "INSERT INTO file_content (path, content) VALUES (?, ?)", (path, content)
+        )
+        conn.commit()
+
+
+def paths_missing_content(paths: List[str]) -> List[str]:
+    """Which of `paths` have no indexed content yet.
+
+    Databases written before content indexing existed hold files whose mtime
+    has not changed, so the indexer's reconciliation skips them and their
+    content would never be read. This is what lets an existing install
+    backfill instead of requiring a wiped index.
+    """
+    if not paths:
+        return []
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        found = set()
+        for start in range(0, len(paths), 400):
+            chunk = paths[start:start + 400]
+            placeholders = ",".join("?" * len(chunk))
+            cursor.execute(
+                f"SELECT DISTINCT path FROM file_content WHERE path IN ({placeholders})",
+                chunk,
+            )
+            found.update(row["path"] for row in cursor.fetchall())
+    return [p for p in paths if p not in found]
+
+
+def search_files_by_content(keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """Files whose *text* matches, with the matching passage.
+
+    Joined back to `files` rather than trusted on its own: a path can survive in
+    the FTS table after its file record is gone, and returning a file the index
+    no longer knows about would hand the model a path it cannot act on.
+
+    The query is passed to FTS5 as a quoted phrase, because bare user text is
+    not a search string but a query *language*. Measured against this build:
+
+        ZEPHYR-441   ->  OperationalError: no such column: 441
+        C++          ->  OperationalError: syntax error near "+"
+        a AND        ->  OperationalError: syntax error near ""
+        "            ->  OperationalError: unterminated string
+
+    So the common case is not a wrong answer but a raised exception, in a code
+    path the model reaches through a tool call. Quoting turns all four into an
+    ordinary literal search.
+    """
+    term = keyword.strip()
+    if not term:
+        return []
+    phrase = '"' + term.replace('"', '""') + '"'
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT f.path, f.name, f.extension, f.size_bytes, f.category,
+                       snippet(file_content, 1, '', '', '...', 12) AS excerpt
+                FROM file_content
+                JOIN files f ON f.path = file_content.path
+                WHERE file_content MATCH ?
+                ORDER BY rank
+                LIMIT ?
+                """,
+                (phrase, limit),
+            )
+        except sqlite3.OperationalError:
+            # A term FTS5 cannot parse even quoted is a miss, not a crash:
+            # search is reached through a tool call and an exception there
+            # becomes an opaque failure in the middle of a conversation.
+            return []
+        return [
+            {
+                "path": row["path"],
+                "name": row["name"],
+                "extension": row["extension"],
+                "size_bytes": row["size_bytes"],
+                "category": row["category"] or "",
+                "excerpt": " ".join((row["excerpt"] or "").split()),
+            }
+            for row in cursor.fetchall()
+        ]
+
+
 def delete_file_by_path(path: str) -> None:
     """Removes a file record from the database by its absolute path.
 
@@ -219,6 +324,7 @@ def delete_file_by_path(path: str) -> None:
     """
     with get_connection() as conn:
         conn.execute("DELETE FROM files WHERE path = ?", (path,))
+        conn.execute("DELETE FROM file_content WHERE path = ?", (path,))
         conn.commit()
 
 
@@ -250,6 +356,9 @@ def delete_files_by_paths(paths: List[str]) -> None:
             chunk = paths[i:i+900]
             placeholders = ",".join(["?"] * len(chunk))
             cursor.execute(f"DELETE FROM files WHERE path IN ({placeholders})", chunk)
+            cursor.execute(
+                f"DELETE FROM file_content WHERE path IN ({placeholders})", chunk
+            )
         conn.commit()
 
 
