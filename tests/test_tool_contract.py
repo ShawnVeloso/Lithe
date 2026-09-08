@@ -339,3 +339,93 @@ def test_both_entry_points_declare_identical_tools(isolated_db, scripted_gemini)
 
     assert described(sync_config) == described(stream_config)
     assert {name for name, _ in described(sync_config)} == EXPECTED_TOOL_NAMES
+
+
+# ---------------------------------------------------------------------------
+# Thought signatures
+#
+# Thinking models attach an opaque `thought_signature` to every function call
+# and reject the conversation if it does not come back:
+#
+#     400 INVALID_ARGUMENT ... Function call is missing a thought_signature in
+#     functionCall parts.
+#
+# Lithe rebuilt calls from name and args in two places -- the streaming turn and
+# every reload from SQLite -- and `Part.from_function_call()` cannot carry one.
+# The whole conversation then fails, which reads as a transport error and
+# demotes the user to Ollama for the rest of the session with a working Gemini
+# key. Observed in the wild on gemini-3.6-flash.
+# ---------------------------------------------------------------------------
+
+SIGNATURE = b"\x00signed-by-the-model\xff"
+
+
+def _sent_call_parts(client, call_index):
+    """The function_call parts Lithe sent back on a given model call."""
+    parts = []
+    for content in client.calls[call_index]["contents"]:
+        for part in (content.parts or []):
+            if part.function_call:
+                parts.append(part)
+    return parts
+
+
+def test_streaming_sends_the_thought_signature_back(isolated_db, scripted_gemini):
+    """The reported failure: the follow-up call carried an unsigned call."""
+    from tests.support.fake_gemini import signed_function_call_response
+
+    client = scripted_gemini([
+        signed_function_call_response("search_files", {"keyword": "clip"}, SIGNATURE),
+        text_response("Found it."),
+    ])
+    _drain(brain.chat_stream("find me a clip"))
+
+    # Call 0 is the streamed turn; call 1 replays it with the tool result.
+    replayed = _sent_call_parts(client, 1)
+    assert replayed, "the follow-up call carried no function_call at all"
+    assert replayed[0].thought_signature == SIGNATURE
+
+
+def test_a_signature_survives_a_reload(isolated_db, scripted_gemini):
+    """The second loss point: SQLite round-trip through _save_content."""
+    from tests.support.fake_gemini import signed_function_call_response
+
+    scripted_gemini([
+        signed_function_call_response("search_files", {"keyword": "clip"}, SIGNATURE),
+        text_response("Found it."),
+    ])
+    brain.chat("find me a clip")
+
+    brain._load_history()
+
+    signatures = [
+        part.thought_signature
+        for content in brain._chat_history
+        for part in (content.parts or [])
+        if part.function_call
+    ]
+    assert SIGNATURE in signatures
+
+
+def test_an_unsigned_call_still_reloads(isolated_db, scripted_gemini):
+    """Absent is not invalid: models that emit no signature must still work.
+
+    Dropping unsigned tool traffic on reload would break every conversation
+    recorded by a non-thinking model, which is a larger population than the one
+    being fixed.
+    """
+    scripted_gemini([
+        function_call_response("search_files", {"keyword": "clip"}),
+        text_response("Found it."),
+    ])
+    brain.chat("find me a clip")
+
+    brain._load_history()
+
+    names = [
+        part.function_call.name
+        for content in brain._chat_history
+        for part in (content.parts or [])
+        if part.function_call
+    ]
+    assert "search_files" in names
