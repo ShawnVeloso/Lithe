@@ -220,6 +220,7 @@ class OllamaRecorder:
         self.tool_calls = []   # what Lithe actually executed
         self.requested = []    # what the model asked for
         self.tool_results = []  # what those calls returned
+        self._awaiting = []    # requested, not yet known to have run
         self._real_post = None
 
     def __enter__(self):
@@ -243,25 +244,36 @@ class OllamaRecorder:
         return False
 
     def _harvest(self, response):
-        """Separate what the model asked for from what Lithe ran.
+        """Record what the model asked for; execution is confirmed later.
 
-        _ollama_chat takes `message["tool_calls"][0]` and stops -- there is no
-        agent loop on this path. Recording every requested call as though it
-        ran made multistep-profile-then-chart report "now passing" when the
-        model had merely *named* both tools and Lithe executed one. A
-        multi-step case has to be scored on execution or it measures nothing.
+        A multi-step case has to be scored on execution rather than on what was
+        merely named, or it measures nothing. This once approximated that by
+        counting `tool_calls[0]` as executed and the rest as requested, because
+        `_ollama_chat` took the first call and stopped.
+
+        That approximation went stale the moment the Ollama parity pass added
+        a real agent loop: `_ollama_drive_tool_rounds` runs `for call in calls`
+        and executes every one. The recorder kept under-reporting, and
+        `multistep-profile-then-chart` was scored "never ran inline_chart" for
+        three passes across two models while a 39KB chart reached the caller
+        every time -- an instrument calling a working capability a failure, for
+        the third time in this project's history.
+
+        So execution is no longer inferred from position. A call is counted as
+        executed when its *result* comes back (see _harvest_results), because
+        brain only appends a `role: "tool"` message after running the tool.
+        That cannot drift from the implementation the way a positional rule
+        did: no result, no execution, whatever the loop happens to do next.
         """
         try:
             message = response.json().get("message", {})
         except Exception:
             return
-        calls = message.get("tool_calls") or []
-        for index, call in enumerate(calls):
+        for call in message.get("tool_calls") or []:
             function = call.get("function", {})
             entry = (function.get("name", ""), dict(function.get("arguments") or {}))
             self.requested.append(entry)
-            if index == 0:
-                self.tool_calls.append(entry)
+            self._awaiting.append(entry)
 
     def _harvest_results(self, payload):
         """Read what tools returned out of the *outgoing* request.
@@ -281,7 +293,23 @@ class OllamaRecorder:
             for m in messages
             if m.get("role") == "tool"
         ]
-        self.tool_results.extend(results[len(self.tool_results):])
+        fresh = results[len(self.tool_results):]
+        self.tool_results.extend(fresh)
+        for name, _ in fresh:
+            self.tool_calls.append(self._claim(name))
+
+    def _claim(self, name):
+        """Move the requested call this result belongs to into the executed list.
+
+        Matched by name rather than by position, so a turn whose results come
+        back out of order still attributes the right arguments. A result with
+        no matching request is still counted as executed -- it ran, and losing
+        that is worse than losing its arguments.
+        """
+        for index, (pending_name, args) in enumerate(self._awaiting):
+            if pending_name == name:
+                return self._awaiting.pop(index)
+        return (name, {})
 
 
 class EvalHarness:
@@ -386,9 +414,11 @@ class EvalHarness:
             # What each executed tool returned, so a case can tell "the tool
             # failed" apart from "the tool worked and the answer dropped it".
             "tool_results": list(recorder.tool_results),
-            # Only differs on the Ollama path, which executes the first call
-            # and drops the rest. Scored cases use tool_names (executed);
-            # this is here so a failure detail can say what was asked for.
+            # Differs from tool_names when a call was named but never ran --
+            # a mutating call waiting on confirmation, or one emitted after the
+            # tools were withdrawn on the final round. Scored cases use
+            # tool_names (executed); this is here so a failure detail can say
+            # what was asked for.
             "requested_names": [name for name, _ in requested],
             "engine": brain.active_engine,
             "error": getattr(recorder, "error", None),
@@ -449,6 +479,31 @@ def harness(corpus, tmp_path_factory):
     lithe_config.INDEX_WHITELIST.extend(original_whitelist)
 
 
+def _configured_model():
+    """The model this run actually used, read at summary time.
+
+    `POST /api/config/llm` rebinds `brain.OLLAMA_MODEL` live, and a shell-set
+    OLLAMA_MODEL overrides the .env, so the name is read now rather than
+    captured at import. Import failures must not take the summary down: a
+    scorecard that fails to print loses the whole run's results.
+    """
+    try:
+        if ENGINE == "gemini":
+            from src.backend.config import GEMINI_MODEL
+            return GEMINI_MODEL
+        from src.backend import brain
+        return brain.OLLAMA_MODEL
+    except Exception:
+        return "?"
+
+
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    from tests.eval import scorecard
-    scorecard.render(terminalreporter.write_line, engine=ENGINE, aborted=ABORT["reason"])
+    from tests.eval import scorecard, trace
+    scorecard.render(
+        terminalreporter.write_line,
+        engine=ENGINE,
+        model=_configured_model(),
+        seed=EVAL_SEED if ENGINE == "ollama" else None,
+        aborted=ABORT["reason"],
+        trace_path=trace.path(),
+    )

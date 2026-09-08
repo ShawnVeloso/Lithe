@@ -179,12 +179,14 @@ CASES = [
 
     # -- Multi-step (needs the bounded loop + read_file) --------------------
     {
-        # Still failing on Ollama, but the cause has moved. Lithe chains fine
-        # now (see tests/test_ollama_path.py); llama3.2 runs search_files, gets
-        # the path back, and then answers that it "cannot read files" -- with
-        # read_file in the schema it was just handed and the system prompt
-        # telling it to make exactly that call. A model limitation, not a
-        # harness one, so it will not close without a stronger local model.
+        # A model limitation, and now measured rather than asserted. Lithe
+        # chains fine (see tests/test_ollama_path.py). On the same corpus, same
+        # seed and same harness: **qwen2.5 passes 3/3, llama3.2 fails 0/3** --
+        # it either answers that it "cannot read files" (with read_file in the
+        # schema it was just handed) or reads the file and still omits the
+        # token. Kept as a known_gap because llama3.2 is the shipped default;
+        # it closes on a 7B model, so whether to change that default is a
+        # separate decision about 4.7GB and 7B inference, not a Lithe fix.
         "id": "multistep-find-then-read",
         "category": "multi-step",
         "prompt": "find the file about the meeting, then tell me the code word inside it",
@@ -192,9 +194,17 @@ CASES = [
         "known_gap": True,
     },
     {
-        # Both tools, not just the first. Asserting only profile_data made this
-        # "pass" on the Ollama path, which has no agent loop and cannot chain
-        # at all -- reporting a closed gap that was never closed.
+        # Not a gap. It was closed by the Ollama parity pass and the scorecard
+        # could not see it: OllamaRecorder counted only tool_calls[0] as
+        # executed, a rule that was true when _ollama_chat took the first call
+        # and stopped, and stale the moment the agent loop began running every
+        # call in a turn. So this read "still failing" for three passes across
+        # two models while a 39KB chart reached the caller every time. Now
+        # scored on tool results, it passes 3/3 on both llama3.2 and qwen2.5.
+        #
+        # Both tools, not just the first: asserting only profile_data is what
+        # let it report a closed gap that was never closed, back when the path
+        # genuinely could not chain.
         "id": "multistep-profile-then-chart",
         "category": "multi-step",
         "prompt": "profile sales_q3.csv, then chart revenue by month",
@@ -204,6 +214,5 @@ CASES = [
         # closed. Chaining to inline_chart and then dropping what it produced
         # would not be this gap closing.
         "expect_chart": True,
-        "known_gap": True,
     },
 ]

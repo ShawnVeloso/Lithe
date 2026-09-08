@@ -112,9 +112,8 @@ spend much of their day.
 
 `LITHE_EVAL_ENGINE=ollama` does *not* call `_ollama_chat` directly. It installs
 a Gemini client that raises `ConnectError`, so `brain.chat()` takes exactly the
-path a user gets during an outage — including the fact that the Ollama branch
-has no agent loop and sends no history, which is why the multi-step cases
-cannot pass there. Scores are only comparable **between runs of the same
+path a user gets during an outage — agent loop, history and all, since the
+Ollama parity pass. Scores are only comparable **between runs of the same
 engine**; the scorecard header names which one produced them.
 
 ### Pre-flight and the abort guard
@@ -243,6 +242,8 @@ nothing useful, or an answer that dropped a result which was fine.
 ### Reading the scorecard
 
 ```
+LITHE CAPABILITY SCORECARD  (engine: ollama)
+  model: llama3.2    seed: 20260905
   tool selection         5/6
       fail   select-chart: expected tool inline_chart, got []
   CAPABILITY SCORE: 71%  (14 scored cases)
@@ -250,15 +251,43 @@ nothing useful, or an answer that dropped a result which was fine.
       retrieval-by-content         still failing
 ```
 
+The header names the **model** and **seed** as well as the engine, because a
+run is only comparable to another run of all three. In particular, a number
+from one model against a number from another says something about the models —
+it is not a before/after on Lithe, and must never be read as one.
+
 **The absolute percentage is close to meaningless** — it is a function of which
 cases someone chose to write. Do not quote it as a fact about Lithe. Its only
 job is the **delta**: run it before a change and after, and see which cases
 moved.
 
-Cases marked `known_gap` are documented limitations (no content index, no
-multi-step tool chaining). They are excluded from the score and reported
+Cases marked `known_gap` are documented limitations (no content index; a
+multi-step chain the shipped default model will not attempt). They are
+excluded from the score and reported
 separately, so they show up as capability that is missing rather than as a
 regression. When one flips to "now passing", that gap has been closed.
+
+### The diagnostic trace
+
+A scorecard keeps one failure line per case and discards the rest, which is the
+right amount of detail for a score and far too little for a diagnosis — "still
+failing" says a chain broke, not where.
+
+```
+LITHE_EVAL_TRACE=1 LITHE_EVAL=1 python -m pytest -m eval -k multistep -q
+```
+
+writes every repeat's full outcome to `eval-trace.jsonl` as JSON lines: the
+tools Lithe *executed* and the ones the model *requested* (they differ on the
+Ollama path, and that difference is usually the diagnosis), what each tool
+returned, the final text, and the scorer's own reason so the trace can never
+disagree with the verdict it explains. Set it to a path to write elsewhere.
+
+It is **off by default and never touches a verdict** — a diagnostic that could
+move a score would be one more thing to distrust when the score moves. Long
+fields are clipped at 2000 characters and a chart is recorded as
+`chart_present` plus a length, not as its multi-megabyte data URI. The file is
+truncated by the first write of each run, so a trace always stands alone.
 
 ### Adding a case
 

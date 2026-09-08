@@ -163,6 +163,14 @@ contextBridge.exposeInMainWorld('litheAPI', {
     return await response.json()
   },
 
+  getOllamaModels: async () => {
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/config/ollama-models`)
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status} ${response.statusText}`)
+    }
+    return await response.json()
+  },
+
   setLlmConfig: async (cfg: {api_key?: string; ollama_url?: string; ollama_model?: string}) => {
     const response = await fetch(`${PYTHON_SERVER_URL}/api/config/llm`, {
       method: 'POST',

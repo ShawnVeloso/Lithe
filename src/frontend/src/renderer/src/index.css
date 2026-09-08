@@ -564,6 +564,30 @@ body {
   border-color: var(--accent);
 }
 
+.settings-field select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 6px;
+  outline: none;
+}
+
+.settings-field select:focus {
+  border-color: var(--accent);
+}
+
+/* A model that cannot serve is a warning, not an error: the value still
+   saves, and the user may be configuring a machine they have not pulled to
+   yet. Distinct from .settings-error, which means the save itself failed. */
+.settings-notice {
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--accent);
+}
+
 .settings-error {
   font-size: 10px;
   color: var(--danger);
