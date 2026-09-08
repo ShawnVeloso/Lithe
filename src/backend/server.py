@@ -475,10 +475,15 @@ async def remove_extension_endpoint(request: ExtensionRequest, background_tasks:
 
 @app.get("/api/search")
 async def search_endpoint(q: str):
-    """Direct search against the file index."""
-    from src.backend.memory import search_files_by_name
-    results = search_files_by_name(q)
-    return {"results": results}
+    """Direct search against the file index, by name and by file contents.
+
+    Shares memory.search_index with the model's search_files tool. Before that
+    it called search_files_by_name only, so content search shipped to the model
+    and not to the person -- the user could not find a file that Lithe itself
+    could.
+    """
+    from src.backend.memory import search_index
+    return {"results": search_index(q)}
 
 # ---------------------------------------------------------------------------
 # Undo Stack Endpoints (Feature 3)

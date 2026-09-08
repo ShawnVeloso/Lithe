@@ -316,6 +316,34 @@ def search_files_by_content(keyword: str, limit: int = 20) -> List[Dict[str, Any
         ]
 
 
+def search_index(keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """Name matches first, then content matches, deduplicated by path.
+
+    The one place the two halves of search are combined. The LLM tool and the
+    UI's search box both call this rather than each merging for themselves --
+    two hand-maintained copies of a rule is the shape of the bug that left the
+    declared tool names and the dispatch map disagreeing, and it would show up
+    here as the model and the user getting different answers to the same query.
+
+    Each row carries `match`, so a caller can label where the hit came from;
+    only content rows carry `excerpt`.
+    """
+    by_name = search_files_by_name(keyword, limit)
+    for row in by_name:
+        row["match"] = "name"
+
+    named = {row["path"] for row in by_name}
+    # A name match wins a tie: a file called ZEPHYR-441.md answers "ZEPHYR-441"
+    # better than one mentioning it in passing, and an excerpt for a file
+    # already matched by name is noise.
+    by_content = [
+        dict(row, match="content")
+        for row in search_files_by_content(keyword, limit)
+        if row["path"] not in named
+    ]
+    return (by_name + by_content)[:limit]
+
+
 def delete_file_by_path(path: str) -> None:
     """Removes a file record from the database by its absolute path.
 
