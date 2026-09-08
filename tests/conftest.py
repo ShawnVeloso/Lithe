@@ -1,6 +1,6 @@
 """Shared fixtures for the Lithe test suite.
 
-Two of these are autouse and exist for safety rather than convenience:
+Three of these are autouse and exist for safety rather than convenience:
 
 `reset_brain_state` — brain.py keeps the whole session in module globals
 (_chat_history, _pending_session, ...). Without a reset between tests, a test
@@ -8,6 +8,14 @@ that leaves a pending tool proposal behind changes the outcome of the next one.
 
 `no_real_network` — blocks httpx so a unit test cannot quietly succeed by
 talking to an Ollama instance that happens to be running on the dev machine.
+
+`no_real_indexing` — constructing a TestClient fires the app's startup hook,
+which spawns a background thread that walks the real INDEX_WHITELIST. Running
+the suite was therefore crawling the developer's actual drive and writing its
+file metadata into whichever database happened to be active, and once content
+indexing landed it would have stored the *contents* of those files too. It also
+made tests nondeterministic: the thread outlives the test that started it, so a
+later test's mocked os.stat could be picked up mid-walk.
 
 Note also that importing src.backend.brain runs _load_history() at module
 scope, which reads DB_PATH. Tests must therefore patch DB_PATH before that
@@ -83,6 +91,25 @@ def reset_brain_state():
 
 
 @pytest.fixture(autouse=True)
+def no_real_indexing(request, monkeypatch):
+    """Keep the app's startup hook off the real filesystem.
+
+    Patched on the server module rather than the indexer, because server.py
+    imports the names at module scope. Opted out of by the `live` marker, for a
+    test that genuinely means to exercise startup.
+    """
+    if request.node.get_closest_marker("live"):
+        yield
+        return
+
+    from src.backend import server
+
+    monkeypatch.setattr(server, "walk_and_index", lambda *a, **k: 0)
+    monkeypatch.setattr(server, "start_watcher", lambda *a, **k: None)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def no_real_network(request, monkeypatch):
     """Fail loudly if a non-live test tries to make an HTTP call.
 
@@ -149,6 +176,11 @@ class Workspace:
             "indexed_at": stat.st_mtime,
             "category": "",
         }])
+        # Content indexed through the real code path, so a test that searches
+        # by content exercises what production stores rather than a fixture's
+        # idea of it.
+        from src.backend import indexer
+        indexer.index_file_content(str(target), target.suffix.lower())
         return target
 
 
