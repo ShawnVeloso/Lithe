@@ -41,8 +41,7 @@ from src.backend.context_budget import (
 from src.backend.ollama_bridge import call_name_and_args, to_ollama_messages
 from src.backend.tools import execute_rename, execute_delete, execute_write, execute_read
 from src.backend.memory import (
-    search_files_by_name,
-    search_files_by_content,
+    search_index,
     record_action,
     insert_auto_summary,
 )
@@ -893,15 +892,9 @@ def _build_tool_functions():
         Args:
             keyword: A word or phrase to look for.
         """
-        by_name = search_files_by_name(keyword)
-        named = {r["path"] for r in by_name}
-        # Name matches win a tie: a file called ZEPHYR-441.md answers
-        # "ZEPHYR-441" better than one mentioning it in passing, and an excerpt
-        # for a file already matched by name is noise.
-        by_content = [
-            r for r in search_files_by_content(keyword) if r["path"] not in named
-        ]
-        results = (by_name + by_content)[:SEARCH_RESULT_LIMIT]
+        # Shared with the UI's search box via memory.search_index, so the
+        # model and the user cannot get different answers to the same query.
+        results = search_index(keyword, SEARCH_RESULT_LIMIT)
 
         def _record(outcome):
             record_action(
