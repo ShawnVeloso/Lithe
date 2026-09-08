@@ -297,15 +297,48 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 # Ollama fallback (Phase 2: Reliability)
 # ---------------------------------------------------------------------------
-def _ollama_models() -> list[str] | None:
-    """Model tags the local Ollama has pulled, or None if it is unreachable."""
+# Model families that cannot hold a conversation at all. Ollama serves
+# embedding models from the same /api/tags list as chat models -- all-minilm
+# sits next to llama3.2 -- and picking one as OLLAMA_MODEL breaks the fallback
+# outright rather than merely degrading it.
+#
+# A denylist rather than an allowlist, deliberately: a chat model wrongly
+# hidden is a capability the user cannot reach and cannot diagnose, while an
+# embedding model wrongly shown is one confusing entry in a list. Erring
+# toward showing a model is the cheaper mistake.
+EMBEDDING_ONLY_FAMILIES = {"bert", "nomic-bert"}
+
+
+def _ollama_catalog() -> list[dict] | None:
+    """Raw model entries from /api/tags, or None if Ollama is unreachable.
+
+    The single HTTP path; _ollama_models() reads names off this so the two
+    cannot disagree about what is installed.
+    """
     try:
         resp = httpx.get(f"{OLLAMA_URL}/api/tags", timeout=5)
         if resp.status_code != 200:
             return None
-        return [m.get("name", "") for m in resp.json().get("models", [])]
+        return list(resp.json().get("models", []))
     except Exception:
         return None
+
+
+def _is_embedding_only(entry: dict) -> bool:
+    """True for a model that can embed text but cannot answer with it."""
+    details = entry.get("details") or {}
+    families = set(details.get("families") or [])
+    if details.get("family"):
+        families.add(details["family"])
+    return bool(families & EMBEDDING_ONLY_FAMILIES)
+
+
+def _ollama_models() -> list[str] | None:
+    """Model tags the local Ollama has pulled, or None if it is unreachable."""
+    catalog = _ollama_catalog()
+    if catalog is None:
+        return None
+    return [m.get("name", "") for m in catalog]
 
 
 def _model_is_pulled(model: str, available: list[str]) -> bool:
