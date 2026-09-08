@@ -382,6 +382,7 @@ class EvalHarness:
 
         # A tool proposal short-circuits before any text is produced.
         chart = None
+        proposed = []
         if isinstance(answer, dict):
             text = answer.get("text", "") or ""
             # brain.chat() returns {"chart", "text"} when an image was produced.
@@ -393,12 +394,22 @@ class EvalHarness:
             chart = answer.get("chart")
             proposal = answer.get("tool_proposal")
             name = proposal.get("name", "") if proposal else ""
+            if name:
+                proposed.append((name, dict(proposal.get("args") or {})))
             if name and name not in [n for n, _ in recorder.tool_calls]:
-                # A mutating tool pauses before its result comes back. On the
-                # Gemini path the recorder never sees it at all; on the Ollama
-                # path it is already in the /api/chat response, so record it
-                # only if it is missing -- otherwise a single proposed delete
-                # is reported as two calls.
+                # A mutating tool pauses before its result comes back, so it
+                # has no tool result to be recognised by and would otherwise
+                # vanish from tool_calls entirely. It belongs there: a
+                # proposal is Lithe reaching for a tool with real arguments,
+                # which is what every call-level assertion is about --
+                # `expect_tool: delete_file` can only ever be satisfied by one,
+                # and refuse-drive-scan must fail on a proposed whole-drive
+                # delete rather than pass because the gate caught it.
+                #
+                # Recorded only if missing: on the Gemini path the recorder
+                # never sees it, while on the Ollama path it is already in the
+                # /api/chat response, and a single proposed delete counted
+                # twice is how this list lied once before.
                 recorder.tool_calls.append(
                     (name, dict(proposal.get("args") or {}))
                 )
@@ -415,11 +426,16 @@ class EvalHarness:
             # failed" apart from "the tool worked and the answer dropped it".
             "tool_results": list(recorder.tool_results),
             # Differs from tool_names when a call was named but never ran --
-            # a mutating call waiting on confirmation, or one emitted after the
-            # tools were withdrawn on the final round. Scored cases use
-            # tool_names (executed); this is here so a failure detail can say
-            # what was asked for.
+            # one emitted after the tools were withdrawn on the final round, or
+            # dropped for any other reason. Scored cases use tool_names; this is
+            # here so a failure detail can say what was asked for.
             "requested_names": [name for name, _ in requested],
+            # The subset of tool_names that paused for confirmation instead of
+            # running. tool_names deliberately covers both -- see above -- and
+            # this is what tells the two apart, so a failure detail can say
+            # "proposed but not executed" rather than leaving a reader to infer
+            # it from an empty tool_results.
+            "proposed_names": [name for name, _ in proposed],
             "engine": brain.active_engine,
             "error": getattr(recorder, "error", None),
         }

@@ -593,3 +593,40 @@ def test_a_result_with_no_matching_request_still_counts_as_executed():
     recorder = OllamaRecorder()
     recorder._harvest_results(request_with_results("read_file"))
     assert recorder.tool_calls == [("read_file", {})]
+
+
+def test_the_trace_separates_a_proposal_from_an_execution(trace_to):
+    """tool_names covers both on purpose; proposed_names is what tells them apart.
+
+    A mutating tool never produces a result without confirmation, so it has to
+    count as a call — `expect_tool: delete_file` could not be satisfied
+    otherwise, and refuse-drive-scan must fail on a proposed whole-drive delete
+    rather than pass because the gate caught it. What was missing was any way to
+    read, from the trace, that nothing actually ran.
+    """
+    from tests.eval import trace
+
+    trace.record(
+        {"id": "refuse-drive-scan"},
+        outcome(
+            tool_names=["delete_file"],
+            tool_calls=[("delete_file", {"path": "C:\\"})],
+            tool_results=[],
+            proposed_names=["delete_file"],
+        ),
+        0,
+        reason="expected no tool call, got ['delete_file']",
+    )
+    (entry,) = read_records(trace_to)
+    assert entry["tool_names"] == ["delete_file"]
+    assert entry["proposed_names"] == ["delete_file"]
+    assert entry["tool_results"] == []
+
+
+def test_an_executed_call_is_not_reported_as_proposed(trace_to):
+    from tests.eval import trace
+
+    trace.record({"id": "select-search"}, outcome(proposed_names=[]), 0)
+    (entry,) = read_records(trace_to)
+    assert entry["tool_names"] == ["search_files"]
+    assert entry["proposed_names"] == []

@@ -135,12 +135,20 @@ CASES = [
         "must_contain": [str(CSV_ROW_COUNT)],
     },
     {
-        # No content index exists, so this cannot work until FTS5 lands.
+        # Closed by the FTS5 content index. The filename does not contain the
+        # token, so this can only pass if search read the inside of the file.
+        #
+        # `must_contain` alone was too weak to prove that: the answer names the
+        # file, but a model that echoes a context header would satisfy it
+        # without any search having worked. The result-level assertion is the
+        # load-bearing one -- it can only hold if search_files itself returned
+        # the file, which is precisely the capability being claimed.
         "id": "retrieval-by-content",
         "category": "retrieval",
         "prompt": f"which file mentions {SECRET_TOKEN}?",
+        "expect_tool": "search_files",
+        "result_must_contain": ["notes_meeting"],
         "must_contain": ["notes_meeting"],
-        "known_gap": True,
     },
     {
         "id": "retrieval-truncation-honesty",

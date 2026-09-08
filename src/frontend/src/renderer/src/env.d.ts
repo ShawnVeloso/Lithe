@@ -33,7 +33,7 @@ export interface LitheAPI {
   toggleSafeword: (active: boolean) => Promise<void>
   getLlmConfig: () => Promise<{gemini_api_key_masked: string, ollama_url: string, ollama_model: string}>
   setLlmConfig: (cfg: {api_key?: string, ollama_url?: string, ollama_model?: string}) => Promise<{gemini_api_key_masked: string, ollama_url: string, ollama_model: string}>
-  getOllamaModels: () => Promise<{reachable: boolean, installed: string[], current: string, current_installed: boolean}>
+  getOllamaModels: () => Promise<{reachable: boolean, installed: string[], embedding_only: string[], current: string, current_installed: boolean}>
   searchFiles: (query: string) => Promise<{results: Array<{path: string, name: string, extension: string, size_bytes: number, category: string}>}>
   getUndoHistory: () => Promise<{history: Array<{id: number, tool_name: string, details_json: string, reversible: boolean, timestamp: number}>}>
   undoAction: (actionId: number) => Promise<{status: string}>

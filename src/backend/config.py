@@ -108,6 +108,26 @@ DEFAULT_EXCLUDED_EXTENSIONS = [
     ".rdb", ".lock"
 ]
 
+# Extensions whose *text* is worth putting in the content index. An allowlist,
+# unlike EXCLUDED_EXTENSIONS: content indexing reads and stores the bytes of
+# every file it accepts, so the cost of wrongly including a format is a corpus
+# full of binary noise and a much larger database, while the cost of wrongly
+# excluding one is a file that can still be found by name. The conservative
+# direction is the opposite of the one the exclusion list wants.
+CONTENT_INDEXED_EXTENSIONS = {
+    ".txt", ".md", ".markdown", ".rst", ".log", ".csv", ".tsv",
+    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".env",
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".htm", ".css", ".scss",
+    ".java", ".c", ".h", ".cpp", ".hpp", ".cs", ".go", ".rs", ".rb", ".php",
+    ".sh", ".bat", ".ps1", ".sql", ".xml", ".srt", ".vtt",
+}
+
+# How much of a file's head is searchable. The same 100KB retrieval already
+# uses, deliberately: a search that could find a phrase retrieval cannot then
+# show would be a worse failure than not finding it -- the model would report a
+# match it has no way to quote.
+CONTENT_INDEX_MAX_BYTES = 100 * 1024  # == retrieval.MAX_FILE_SIZE_BYTES
+
 # Parse the comma-separated whitelist from .env
 _raw_whitelist = os.getenv("INDEX_WHITELIST", "")
 INDEX_WHITELIST: list[str] = [
