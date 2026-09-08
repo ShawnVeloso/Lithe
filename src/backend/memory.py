@@ -267,10 +267,17 @@ def search_files_by_content(keyword: str, limit: int = 20) -> List[Dict[str, Any
     the FTS table after its file record is gone, and returning a file the index
     no longer knows about would hand the model a path it cannot act on.
 
-    The query is passed to FTS5 as a quoted phrase. Bare user text is a query
-    language -- `ZEPHYR-441` parses as `ZEPHYR NOT 441` and a stray quote is a
-    syntax error that raises -- so quoting makes an ordinary search behave the
-    way a user expects rather than silently searching for something else.
+    The query is passed to FTS5 as a quoted phrase, because bare user text is
+    not a search string but a query *language*. Measured against this build:
+
+        ZEPHYR-441   ->  OperationalError: no such column: 441
+        C++          ->  OperationalError: syntax error near "+"
+        a AND        ->  OperationalError: syntax error near ""
+        "            ->  OperationalError: unterminated string
+
+    So the common case is not a wrong answer but a raised exception, in a code
+    path the model reaches through a tool call. Quoting turns all four into an
+    ordinary literal search.
     """
     term = keyword.strip()
     if not term:

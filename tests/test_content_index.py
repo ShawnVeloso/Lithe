@@ -38,9 +38,10 @@ def test_a_file_is_found_by_its_contents(workspace):
 def test_a_hyphenated_term_is_searched_literally(workspace):
     """Bare user text is an FTS5 query language, not a search string.
 
-    Unquoted, `ZEPHYR-441` parses as `ZEPHYR NOT 441` — which happens to match
-    here for the wrong reason, so the case that proves quoting works is a term
-    whose halves live in different files.
+    Unquoted, `ZEPHYR-441` does not merely match the wrong rows — it raises
+    `no such column: 441`. The halves are put in separate files anyway, so the
+    test also fails if quoting were ever replaced by something that splits the
+    term on the hyphen and matches either half.
     """
     workspace.add("alpha.md", "ZEPHYR appears alone here.\n")
     workspace.add("beta.md", "441 appears alone here.\n")
