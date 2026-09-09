@@ -12,6 +12,7 @@ interface MessageBubbleProps {
 }
 
 import ToolProposalCard from './ToolProposalCard'
+import ChartFigure from './ChartFigure'
 
 // ---------------------------------------------------------------------------
 // MessageBubble — Terminal-style message with prefix
@@ -37,7 +38,7 @@ function MessageBubble({ message, onToolResponse }: MessageBubbleProps): JSX.Ele
             onRespond={onToolResponse || (async () => {})}
           />
         ) : message.chart_data_uri ? (
-          <img src={message.chart_data_uri} alt={message.content || 'Chart'} className="message-chart" />
+          <ChartFigure dataUri={message.chart_data_uri} alt={message.content || 'Chart'} />
         ) : (
           <div className="message-text message-markdown">
             <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
