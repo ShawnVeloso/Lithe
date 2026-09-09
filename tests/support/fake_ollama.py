@@ -110,3 +110,101 @@ def force_gemini_outage(monkeypatch, brain):
             raise httpx.ConnectError("scripted outage")
 
     monkeypatch.setattr(brain, "_client", Unreachable())
+
+
+class _FakeStreamResponse:
+    """The NDJSON body Ollama returns when `stream: true`.
+
+    `iter_lines()` is what production reads, so the fake yields the same thing
+    a real response does: one JSON object per line, decoded str, no trailing
+    newline.
+    """
+
+    status_code = 200
+
+    def __init__(self, lines):
+        self._lines = lines
+
+    def iter_lines(self):
+        for line in self._lines:
+            yield line
+
+    def raise_for_status(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def stream_chunks(*contents, done=True):
+    """One NDJSON line per text chunk, as `httpx.stream` would hand them over."""
+    lines = [
+        json.dumps({"message": {"role": "assistant", "content": c}, "done": False})
+        for c in contents
+    ]
+    if done:
+        lines.append(
+            json.dumps({"message": {"role": "assistant", "content": ""}, "done": True})
+        )
+    return lines
+
+
+def stream_tool_call(calls, *, trailing_text=""):
+    """A streamed turn that opens with tool_calls, as Ollama actually sends it."""
+    first = {
+        "message": {
+            "role": "assistant",
+            "content": trailing_text,
+            "tool_calls": [
+                {"function": {"name": name, "arguments": args}} for name, args in calls
+            ],
+        },
+        "done": False,
+    }
+    return [json.dumps(first), json.dumps({"message": {"content": ""}, "done": True})]
+
+
+class StreamingOllama:
+    """Serves queued NDJSON bodies to `httpx.stream`, and JSON to `httpx.post`.
+
+    Both transports are installed because one turn can mix them: the streaming
+    caller streams, while anything still on the blocking path must keep
+    working unchanged.
+    """
+
+    def __init__(self, bodies=None, post_responses=None, model="llama3.2"):
+        self._bodies = list(bodies or [])
+        self._post_queue = list(post_responses or [])
+        self._model = model
+        self.requests = []       # decoded bodies sent to httpx.stream
+        self.post_requests = []  # decoded bodies sent to httpx.post
+
+    def install(self, monkeypatch):
+        import httpx
+
+        def fake_stream(method, url, *args, **kwargs):
+            assert method == "POST", method
+            assert "/api/chat" in str(url), url
+            self.requests.append(kwargs.get("json") or {})
+            if not self._bodies:
+                raise AssertionError("StreamingOllama ran out of scripted bodies")
+            return _FakeStreamResponse(self._bodies.pop(0))
+
+        def fake_post(url, *args, **kwargs):
+            assert "/api/chat" in str(url), url
+            self.post_requests.append(kwargs.get("json") or {})
+            if self._post_queue:
+                return FakeResponse(self._post_queue.pop(0))
+            return FakeResponse(text_message("Done."))
+
+        def fake_get(url, *args, **kwargs):
+            assert "/api/tags" in str(url), url
+            return FakeResponse({"models": [{"name": f"{self._model}:latest"}]})
+
+        monkeypatch.setattr(httpx, "stream", fake_stream)
+        monkeypatch.setattr(httpx, "post", fake_post)
+        monkeypatch.setattr(httpx, "get", fake_get)
+        return self
