@@ -38,6 +38,16 @@ function isDriveRoot(fullPath: string): boolean {
   return /^[a-zA-Z]:\\?$/.test(fullPath) || fullPath === '/' || fullPath === '\\'
 }
 
+interface SearchResult {
+  path: string
+  name: string
+  category: string
+  size_bytes: number
+  /** Which half of the index matched. Content rows also carry an excerpt. */
+  match?: 'name' | 'content'
+  excerpt?: string
+}
+
 // ---------------------------------------------------------------------------
 // IndexPanel — [01] INDEX
 // ---------------------------------------------------------------------------
@@ -45,7 +55,10 @@ function IndexPanel({ status, lastEventTimestamp }: IndexPanelProps): JSX.Elemen
   const [manualInput, setManualInput] = useState('')
   const [manualExtInput, setManualExtInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<Array<{path: string, name: string, category: string, size_bytes: number}>>([])
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  // Distinguishes "nothing matched" from "no search has run yet" — without it
+  // an empty result set and an untouched box look identical.
+  const [hasSearched, setHasSearched] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
 
   const watcherActive = status?.watcher_active ?? false
@@ -122,12 +135,14 @@ function IndexPanel({ status, lastEventTimestamp }: IndexPanelProps): JSX.Elemen
     const trimmed = searchQuery.trim()
     if (!trimmed) {
       setSearchResults([])
+      setHasSearched(false)
       return
     }
     try {
       setIsProcessing(true)
       const data = await window.litheAPI.searchFiles(trimmed)
       setSearchResults(data.results || [])
+      setHasSearched(true)
     } catch (err) {
       console.error('Failed to search files:', err)
     } finally {
@@ -166,15 +181,28 @@ function IndexPanel({ status, lastEventTimestamp }: IndexPanelProps): JSX.Elemen
             disabled={isProcessing}
           />
         </div>
+        {hasSearched && searchResults.length === 0 && (
+          <div className="index-search-results">
+            <span className="index-status__row">no matches in names or contents.</span>
+          </div>
+        )}
         {searchResults.length > 0 && (
-          <div className="index-list" style={{ maxHeight: '150px', borderBottom: '1px solid var(--border)' }}>
-            {searchResults.map((res, i) => (
-              <div className="index-dir" key={i} title={res.path}>
-                <div className="index-dir__info" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
-                  <span className="index-dir__path" style={{ color: 'var(--accent)' }}>{res.name}</span>
-                  <span className="index-dir__count" style={{ fontSize: '10px' }}>
+          <div className="index-search-results">
+            {searchResults.map((res) => (
+              <div className="index-dir" key={res.path} title={res.path}>
+                <div className="index-dir__info index-dir__info--stacked">
+                  <span className="index-dir__path index-dir__path--match">
+                    {res.name}
+                    {res.match === 'content' && (
+                      <span className="index-dir__tag">in file</span>
+                    )}
+                  </span>
+                  <span className="index-dir__count">
                     {shortenPath(res.path)} {res.category && `[${res.category}]`} ({Math.round(res.size_bytes / 1024)} KB)
                   </span>
+                  {res.excerpt && (
+                    <span className="index-dir__excerpt">{res.excerpt}</span>
+                  )}
                 </div>
               </div>
             ))}
