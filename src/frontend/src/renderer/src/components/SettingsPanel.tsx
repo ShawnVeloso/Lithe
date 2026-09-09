@@ -33,11 +33,19 @@ interface OllamaModels {
   current: string
   current_installed: boolean
 }
+// Mirrors config.OLLAMA_TIMEOUT_MIN/MAX. The backend clamps regardless -- this
+// only stops the field from suggesting a value it is about to overrule.
+const OLLAMA_TIMEOUT_MIN = 5
+const OLLAMA_TIMEOUT_MAX = 600
+
 function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element {
   const [maskedKey, setMaskedKey] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [ollamaUrl, setOllamaUrl] = useState('')
   const [ollamaModel, setOllamaModel] = useState('')
+  // Held as a string so the field can be emptied while typing; an empty box
+  // means "leave unchanged", which is the same convention the API key uses.
+  const [ollamaTimeout, setOllamaTimeout] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [models, setModels] = useState<OllamaModels | null>(null)
@@ -50,6 +58,7 @@ function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element {
         setMaskedKey(c.gemini_api_key_masked)
         setOllamaUrl(c.ollama_url)
         setOllamaModel(c.ollama_model)
+        setOllamaTimeout(String(c.ollama_timeout))
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load settings.'))
   }, [])
@@ -84,7 +93,8 @@ function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element {
       await window.litheAPI.setLlmConfig({
         api_key: apiKey,
         ollama_url: ollamaUrl,
-        ollama_model: ollamaModel
+        ollama_model: ollamaModel,
+        ollama_timeout: Number(ollamaTimeout) || 0
       })
       onClose()
     } catch (e) {
@@ -172,6 +182,25 @@ function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element {
             value={ollamaUrl}
             onChange={(e) => setOllamaUrl(e.target.value)}
           />
+        </div>
+
+        <div className="settings-field">
+          <label htmlFor="settings-timeout">Ollama timeout (seconds)</label>
+          <input
+            id="settings-timeout"
+            type="number"
+            min={OLLAMA_TIMEOUT_MIN}
+            max={OLLAMA_TIMEOUT_MAX}
+            value={ollamaTimeout}
+            onChange={(e) => setOllamaTimeout(e.target.value)}
+          />
+          <div className="settings-notice">
+            How long to wait for the local model. A 7B model loading from cold
+            routinely needs more than 60s to reach its first token; the request
+            dies mid-load and looks like a broken fallback. Clamped to{' '}
+            {OLLAMA_TIMEOUT_MIN}&ndash;{OLLAMA_TIMEOUT_MAX}. Applies to the next
+            request &mdash; no restart.
+          </div>
         </div>
 
         {error && <div className="settings-error">{error}</div>}

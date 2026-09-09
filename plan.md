@@ -1,13 +1,13 @@
 > **STATUS — updated 2026-09-09.** Branch `feat/binary-content-extraction`.
-> Suite 266 passing, 1 xfailed. Baseline 81% (16 cases, llama3.2, seed 20260905).
+> Suite 278 passing, 1 xfailed. Baseline 81% (16 cases, llama3.2, seed 20260905).
 >
 > | Phase | State | Landed as |
 > |---|---|---|
 > | 0 — payload golden | **done** | `c4674e4` |
 > | 1 — search parity (watcher, `/api/search`, IndexPanel) | **done** | `61c40bb` |
 > | 2 — PDF + DOCX extraction | **done** | this branch |
-> | 3 — Ollama timeout + streaming | next | — |
-> | 4 — frontend pass | todo | — |
+> | 3 — Ollama timeout + streaming | **done** | this branch |
+> | 4 — frontend pass | next | — |
 > | M1 — safety, prompts, `list_directory` | todo | *first eval run* |
 > | M2 — qwen2.5 default | todo | *second eval run* |
 > | 7 — packaging | todo | *must be last* |

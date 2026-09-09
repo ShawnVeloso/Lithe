@@ -31,8 +31,8 @@ export interface LitheAPI {
   addExcludedExtension: (ext: string) => Promise<void>
   removeExcludedExtension: (ext: string) => Promise<void>
   toggleSafeword: (active: boolean) => Promise<void>
-  getLlmConfig: () => Promise<{gemini_api_key_masked: string, ollama_url: string, ollama_model: string}>
-  setLlmConfig: (cfg: {api_key?: string, ollama_url?: string, ollama_model?: string}) => Promise<{gemini_api_key_masked: string, ollama_url: string, ollama_model: string}>
+  getLlmConfig: () => Promise<{gemini_api_key_masked: string, ollama_url: string, ollama_model: string, ollama_timeout: number}>
+  setLlmConfig: (cfg: {api_key?: string, ollama_url?: string, ollama_model?: string, ollama_timeout?: number}) => Promise<{gemini_api_key_masked: string, ollama_url: string, ollama_model: string, ollama_timeout: number}>
   getOllamaModels: () => Promise<{reachable: boolean, installed: string[], embedding_only: string[], current: string, current_installed: boolean}>
   searchFiles: (query: string) => Promise<{results: Array<{path: string, name: string, extension: string, size_bytes: number, category: string, match?: 'name' | 'content', excerpt?: string}>}>
   getUndoHistory: () => Promise<{history: Array<{id: number, tool_name: string, details_json: string, reversible: boolean, timestamp: number}>}>

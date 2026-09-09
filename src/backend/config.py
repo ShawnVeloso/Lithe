@@ -194,24 +194,44 @@ def update_whitelist(path: str, remove: bool = False) -> None:
         with open(_ACTIVE_ENV_PATH, "w", encoding="utf-8") as f:
             f.writelines(lines)
 
-def update_llm_config(api_key: str = "", ollama_url: str = "", ollama_model: str = "") -> None:
+# A 7B model cold-loading can take well over a minute to reach its first
+# token, and a request that dies mid-load looks to the user exactly like a
+# broken fallback. The floor stops a typo from making every request fail
+# instantly; the ceiling stops one from hanging the UI for an hour.
+OLLAMA_TIMEOUT_MIN: int = 5
+OLLAMA_TIMEOUT_MAX: int = 600
+
+
+def update_llm_config(
+    api_key: str = "",
+    ollama_url: str = "",
+    ollama_model: str = "",
+    ollama_timeout: int = 0,
+) -> None:
     """Persists LLM settings to the active .env and updates the in-memory values.
 
     A blank field means "leave unchanged" -- the settings UI never round-trips the
     real API key (it only ever sees a mask), so an untouched key field must be a
-    no-op rather than an erase.
+    no-op rather than an erase. `ollama_timeout` follows the same convention with
+    `0` as its blank, and is clamped rather than rejected: the setting exists to
+    rescue a slow machine, so a nonsense value should still leave a working one.
     """
-    global GEMINI_API_KEY, OLLAMA_URL, OLLAMA_MODEL, NEEDS_ONBOARDING
+    global GEMINI_API_KEY, OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT, NEEDS_ONBOARDING
     from dotenv import set_key
 
     env_path = _ACTIVE_ENV_PATH or _APPDATA_ENV
     env_path.parent.mkdir(parents=True, exist_ok=True)
     env_path.touch(exist_ok=True)
 
+    timeout = 0
+    if ollama_timeout:
+        timeout = max(OLLAMA_TIMEOUT_MIN, min(OLLAMA_TIMEOUT_MAX, int(ollama_timeout)))
+
     for name, value in (
         ("GEMINI_API_KEY", api_key.strip()),
         ("OLLAMA_URL", ollama_url.strip()),
         ("OLLAMA_MODEL", ollama_model.strip()),
+        ("OLLAMA_TIMEOUT", str(timeout) if timeout else ""),
     ):
         if value:
             set_key(str(env_path), name, value)
@@ -219,6 +239,7 @@ def update_llm_config(api_key: str = "", ollama_url: str = "", ollama_model: str
     GEMINI_API_KEY = api_key.strip() or GEMINI_API_KEY
     OLLAMA_URL = ollama_url.strip() or OLLAMA_URL
     OLLAMA_MODEL = ollama_model.strip() or OLLAMA_MODEL
+    OLLAMA_TIMEOUT = timeout or OLLAMA_TIMEOUT
     NEEDS_ONBOARDING = not GEMINI_API_KEY
 
 
