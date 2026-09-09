@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from src.backend.brain import chat
-from src.backend.indexer import walk_and_index
+from src.backend.indexer import walk_and_index, backfill_binary_content
 from src.backend.watcher import start_watcher
 from src.backend.logger import logger
 
@@ -48,7 +48,13 @@ def auto_index_and_watch():
             from src.backend.changelog import generate_changelog
             generate_changelog()
             walk_and_index()
+            # The watcher starts before document extraction, not after. This
+            # thread is sequential, and parsing a drive's worth of PDFs between
+            # the walk and the watcher would lose every file change made during
+            # that window, silently. Metadata and text files are searchable
+            # immediately; PDF and DOCX text fills in behind the watcher.
             start_watcher()
+            backfill_binary_content()
         except Exception as e:
             logger.exception(f"Fatal error during background startup tasks: {e}")
 

@@ -122,6 +122,20 @@ CONTENT_INDEXED_EXTENSIONS = {
     ".sh", ".bat", ".ps1", ".sql", ".xml", ".srt", ".vtt",
 }
 
+# Formats whose text has to be *extracted* rather than read. Kept separate from
+# CONTENT_INDEXED_EXTENSIONS on purpose: that set's contract is "open UTF-8
+# strict and read", and a PDF opened that way is binary noise. `.doc` (legacy
+# OLE, not a zip) is deliberately absent -- it needs a different parser again.
+BINARY_CONTENT_EXTENSIONS = {".pdf", ".docx"}
+
+# A PDF must be parsed before its text length is known, so the byte cap that
+# protects text files protects nothing here. These three caps do, and each
+# guards a different failure: a huge file, a file with thousands of pages, and
+# a file whose pages are individually pathological.
+BINARY_CONTENT_MAX_FILE_BYTES = 25 * 1024 * 1024
+PDF_MAX_PAGES = 50
+EXTRACT_TIME_BUDGET_SECONDS = 10
+
 # How much of a file's head is searchable. The same 100KB retrieval already
 # uses, deliberately: a search that could find a phrase retrieval cannot then
 # show would be a worse failure than not finding it -- the model would report a
