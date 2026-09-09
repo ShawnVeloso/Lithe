@@ -216,8 +216,9 @@ contextBridge.exposeInMainWorld('litheAPI', {
   /**
    * Undo API
    */
-  getUndoHistory: async () => {
-    const response = await fetch(`${PYTHON_SERVER_URL}/api/undo/history`)
+  getUndoHistory: async (limit?: number) => {
+    const query = limit ? `?limit=${limit}` : ''
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/undo/history${query}`)
     if (!response.ok) {
       throw new Error(`Server error: ${response.status} ${response.statusText}`)
     }

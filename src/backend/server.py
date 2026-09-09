@@ -506,10 +506,14 @@ async def search_endpoint(q: str):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/undo/history")
-async def undo_history_endpoint():
-    """Returns recent reversible actions."""
+async def undo_history_endpoint(limit: int = 10, mutating_only: bool = True):
+    """Recent actions for the undo stack — mutations only by default.
+
+    `limit` defaults to 10 rather than the old 5 so the popover can show a
+    usable stack; the audit export is the place to go for everything.
+    """
     from src.backend.memory import get_action_history
-    return {"history": get_action_history()}
+    return {"history": get_action_history(limit=max(1, min(100, limit)), mutating_only=mutating_only)}
 
 from pydantic import BaseModel
 class UndoRequest(BaseModel):
