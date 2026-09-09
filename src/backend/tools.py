@@ -16,6 +16,8 @@ import os
 import concurrent.futures
 import json
 from src.backend.memory import record_action
+from src.backend.config import BINARY_CONTENT_EXTENSIONS
+from src.backend.extractors import extract_text
 
 # ---------------------------------------------------------------------------
 # Circuit Breaker configuration
@@ -298,13 +300,27 @@ def execute_read(path: str, conversation_id: str = "") -> str:
             return f"ERROR: '{path}' is a directory, not a file."
 
         size = os.path.getsize(path)
+        extension = os.path.splitext(path)[1].lower()
+
+        if extension in BINARY_CONTENT_EXTENSIONS:
+            # Search can find a PDF by its contents, so refusing to read one
+            # would leave the model able to locate a document and unable to say
+            # anything about it -- a worse dead end than not finding it at all.
+            extracted = extract_text(path, extension, MAX_READ_BYTES)
+            if extracted:
+                return extracted
+            return (
+                f"ERROR: no text could be extracted from '{path}'. It may be "
+                "encrypted, or a scan with no text layer."
+            )
+
         try:
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read(MAX_READ_BYTES)
         except UnicodeDecodeError:
             return (
-                f"ERROR: '{path}' is not a UTF-8 text file (it may be a PDF, image "
-                "or other binary format), so its contents cannot be read."
+                f"ERROR: '{path}' is not a UTF-8 text file (it may be an image, "
+                "archive or other binary format), so its contents cannot be read."
             )
 
         if size > MAX_READ_BYTES:
