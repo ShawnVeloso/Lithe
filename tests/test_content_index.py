@@ -231,3 +231,79 @@ def test_no_match_still_says_so(workspace):
     workspace.add("notes.md", "nothing relevant\n")
 
     assert "No files found" in _search("ZEPHYR-441")
+
+
+# --- The rendered result string is model payload ----------------------------
+#
+# search_files' return value goes straight into the conversation, so its exact
+# wording is part of what the capability evaluation measures. Refactoring the
+# row merge underneath it must not alter a single character -- see
+# tests/test_prompt_payload.py for the same discipline applied to the prompt.
+
+
+def test_the_rendered_search_result_is_stable(workspace):
+    """Pins the exact string. A change here resamples the evaluation."""
+    workspace.add("sales_q3.csv", "month,revenue\n2026-01,100\n")
+
+    result = _search("sales_q3")
+
+    lines = result.split("\n")
+    assert lines[0] == "Found 1 file(s) matching 'sales_q3':"
+    assert lines[1].startswith("  sales_q3.csv (0.0 KB)")
+    assert " \u2014 " in lines[1]          # em dash before the path
+    assert len(lines) == 2                 # no excerpt for a name match
+
+
+def test_the_rendered_content_match_carries_its_excerpt(workspace):
+    workspace.add("notes_meeting.md", "The agreed internal code word is ZEPHYR-441.\n")
+
+    result = _search("ZEPHYR-441")
+
+    lines = result.split("\n")
+    assert lines[0] == "Found 1 file(s) matching 'ZEPHYR-441':"
+    assert lines[2].startswith('      matched text: "')
+    assert "ZEPHYR-441" in lines[2]
+
+
+# --- The UI's search box ----------------------------------------------------
+
+
+def api_search(query):
+    from fastapi.testclient import TestClient
+    from src.backend.server import app
+
+    return TestClient(app).get("/api/search", params={"q": query}).json()["results"]
+
+
+def test_the_search_endpoint_finds_files_by_content(workspace):
+    """Content search shipped to the model and not to the person using the app."""
+    workspace.add("notes_meeting.md", "The agreed internal code word is ZEPHYR-441.\n")
+
+    results = api_search("ZEPHYR-441")
+
+    assert [r["name"] for r in results] == ["notes_meeting.md"]
+    assert results[0]["match"] == "content"
+    assert "ZEPHYR-441" in results[0]["excerpt"]
+
+
+def test_the_search_endpoint_still_finds_files_by_name(workspace):
+    workspace.add("quarterly_budget.csv", "month,revenue\n2026-01,100\n")
+
+    results = api_search("budget")
+
+    assert [r["name"] for r in results] == ["quarterly_budget.csv"]
+    assert results[0]["match"] == "name"
+    assert "excerpt" not in results[0]
+
+
+def test_the_endpoint_and_the_tool_agree(workspace):
+    """The user and the model must not get different answers to one query."""
+    workspace.add("notes_meeting.md", "code word ZEPHYR-441\n")
+    workspace.add("zephyr.md", "unrelated body\n")
+
+    from_api = [r["path"] for r in api_search("zephyr")]
+    rendered = _search("zephyr")
+
+    assert from_api, "the endpoint found nothing"
+    for path in from_api:
+        assert path in rendered

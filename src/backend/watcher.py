@@ -18,7 +18,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
 
 from src.backend.config import INDEX_WHITELIST, EXCLUDED_EXTENSIONS
-from src.backend.indexer import EXCLUDED_DIRS
+from src.backend.indexer import EXCLUDED_DIRS, index_file_content
 from src.backend.memory import upsert_files, delete_file_by_path, get_active_watch_rules
 from src.backend.heuristics import categorize_path
 from src.backend.broadcaster import broadcast_event
@@ -127,17 +127,27 @@ class _LitheEventHandler(FileSystemEventHandler):
         elif action in ("upsert", "create"):
             try:
                 stat = os.stat(path)
-                _, ext = os.path.splitext(path)
+                _, raw_ext = os.path.splitext(path)
+                # Lowercased once, because it is used twice and
+                # CONTENT_INDEXED_EXTENSIONS is a lowercase set -- passing the
+                # raw value through would content-index `.md` and skip `.MD`.
+                ext = raw_ext.lower() if raw_ext else ""
                 file_record = {
                     "path": path,
                     "name": os.path.basename(path),
-                    "extension": ext.lower() if ext else "",
+                    "extension": ext,
                     "size_bytes": stat.st_size,
                     "modified_at": stat.st_mtime,
                     "indexed_at": time.time(),
                     "category": categorize_path(path),
                 }
                 upsert_files([file_record])
+                # The startup walk reads file text into the content index;
+                # without the same call here a file created or edited while
+                # Lithe is running stays searchable by name only until the next
+                # restart -- the index silently lagging the filesystem for the
+                # whole session.
+                index_file_content(path, ext)
                 print(f"[Lithe Watcher] Indexed: {os.path.basename(path)}")
                 broadcast_event("indexed", path)
                 

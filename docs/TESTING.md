@@ -153,6 +153,34 @@ accident. A seeded score is a fixed sample of model behaviour, not an average
 of it: treat a one- or two-case move as within the sample, and prefer a
 mechanical explanation (diff the payload) over assuming a real regression.
 
+### What resamples the evaluation
+
+The seed pins sampling for an *identical* payload. It cannot pin it across a
+change to what the model is shown. So a score measured before one of these
+changes is **not comparable** to a score measured after:
+
+| Resamples | Does not |
+|---|---|
+| Either system prompt's text | `/api/search` and all frontend work |
+| `OLLAMA_TOOLS_SCHEMA`, or any tool docstring | `watcher.py` — the eval indexes via `walk_and_index` |
+| The *string* a tool returns to the model | Formats the corpus does not contain |
+| Adding or removing a tool | `OLLAMA_TIMEOUT` — an httpx argument, not payload |
+| `OLLAMA_MODEL` | Ollama streaming, while it stays confined to `chat_stream` |
+| The corpus, or `brain.OLLAMA_OPTIONS` | Anything under `tests/` except `cases.py`, `scoring.py`, `conftest.py` |
+
+The eval drives `brain.chat()`, never `chat_stream()` — which is why the
+streaming fallback can be changed without touching a measured path.
+
+**This is enforced, not remembered.** `tests/test_prompt_payload.py` pins the
+exact `/api/chat` body against `tests/support/golden_ollama_payload.json`.
+A diff of that file is the review signal that a change is eval-affecting.
+**Updating the golden requires a fresh evaluation run and a recorded score in
+the same commit.** The guard exists because two changes had already slipped
+through unnoticed: `search_files` gained content search while the prompt went on
+telling the model it "matches FILENAMES only", and a set of tool descriptions was
+rewritten with no record of the previous text, so a regression could only be
+found by re-running the suite and guessing.
+
 ### A tool description is part of the payload
 
 Editing a tool's description resamples the whole suite. The seed pins sampling
