@@ -509,18 +509,40 @@ def record_action(
         )
         conn.commit()
 
-def get_action_history(limit: int = 5) -> List[Dict[str, Any]]:
-    """Returns the most recent actions."""
+# The tools that change something on disk. `record_action` is called for reads
+# too -- search_files, read_file, profile_data, inline_chart, watch_rule_summary
+# -- because action_history doubles as the audit log. Undo must not: "undo the
+# last action" was routinely landing on a search, reporting it as not
+# reversible, and leaving the delete the user actually meant sitting one row
+# further down.
+MUTATING_TOOLS = ("rename_file", "delete_file", "write_file")
+
+
+def get_action_history(limit: int = 5, mutating_only: bool = True) -> List[Dict[str, Any]]:
+    """Returns the most recent actions, newest first.
+
+    `mutating_only` defaults to True because every caller today is the undo
+    stack. The audit log has its own function (`export_action_history`) and
+    deliberately keeps the reads.
+    """
+    where = ""
+    params: list = []
+    if mutating_only:
+        where = f"WHERE tool_name IN ({','.join('?' * len(MUTATING_TOOLS))})"
+        params.extend(MUTATING_TOOLS)
+    params.append(limit)
+
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """
+            f"""
             SELECT id, tool_name, details_json, reversible, timestamp
             FROM action_history
-            ORDER BY timestamp DESC
+            {where}
+            ORDER BY timestamp DESC, id DESC
             LIMIT ?
             """,
-            (limit,)
+            tuple(params),
         )
         return [dict(row) for row in cursor.fetchall()]
 

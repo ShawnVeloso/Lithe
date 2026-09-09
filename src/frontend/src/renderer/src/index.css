@@ -1090,6 +1090,150 @@ body {
   flex-shrink: 0;
 }
 
+/* --- Session Token Budget --- */
+.token-budget {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.token-budget__track {
+  width: 64px;
+  height: 4px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.token-budget__fill {
+  height: 100%;
+  background: var(--text-dim);
+  transition: width var(--transition-fast);
+}
+
+.token-budget__fill--over {
+  background: var(--accent);
+}
+
+/* --- System strip: clickable chips --- */
+.system-action {
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.system-action:hover {
+  opacity: 1;
+}
+
+.system-engine {
+  margin-left: 12px;
+  color: var(--text-dim);
+  text-transform: none;
+}
+
+.system-engine--local {
+  color: var(--info);
+}
+
+/* --- Undo popover --- */
+/* The strip is fixed to the bottom, so the popover opens upward from its
+   trigger rather than downward off-screen. */
+.undo-history {
+  position: relative;
+}
+
+.undo-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  min-width: 320px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.undo-popover__title {
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.undo-popover__empty {
+  color: var(--text-dim);
+  padding: 4px 0;
+}
+
+.undo-popover__error {
+  color: var(--danger);
+  margin-top: 6px;
+}
+
+.undo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.undo-row__desc {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.undo-row__time {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.undo-row__action {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.undo-row__action--disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+/* --- Audit export form --- */
+.audit-export {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.audit-export__control {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-family: inherit;
+  outline: none;
+  padding: 0 4px;
+}
+
+.audit-export__control option {
+  background: var(--panel);
+}
+
+.audit-export__download {
+  background: var(--text-dim);
+  color: var(--bg);
+  border: none;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.audit-export__download:hover {
+  background: var(--text);
+}
+
 /* --- System Log Drawer --- */
 .system-log-container {
   flex: 1;

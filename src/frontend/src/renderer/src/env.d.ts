@@ -35,7 +35,7 @@ export interface LitheAPI {
   setLlmConfig: (cfg: {api_key?: string, ollama_url?: string, ollama_model?: string, ollama_timeout?: number}) => Promise<{gemini_api_key_masked: string, ollama_url: string, ollama_model: string, ollama_timeout: number}>
   getOllamaModels: () => Promise<{reachable: boolean, installed: string[], embedding_only: string[], current: string, current_installed: boolean}>
   searchFiles: (query: string) => Promise<{results: Array<{path: string, name: string, extension: string, size_bytes: number, category: string, match?: 'name' | 'content', excerpt?: string}>}>
-  getUndoHistory: () => Promise<{history: Array<{id: number, tool_name: string, details_json: string, reversible: boolean, timestamp: number}>}>
+  getUndoHistory: (limit?: number) => Promise<{history: Array<{id: number, tool_name: string, details_json: string, reversible: boolean, timestamp: number}>}>
   undoAction: (actionId: number) => Promise<{status: string}>
   getChatHistory: () => Promise<{history: Array<any>}>
   getConversations: () => Promise<{conversations: Array<{conversation_id: string, last_at: number, title: string | null}>}>

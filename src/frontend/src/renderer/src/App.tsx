@@ -4,6 +4,7 @@ import IndexPanel from './components/IndexPanel'
 import SystemPanel from './components/SystemPanel'
 import CommandPalette from './components/CommandPalette'
 import OnboardingWizard from './components/OnboardingWizard'
+import SettingsPanel from './components/SettingsPanel'
 import type { StatusResponse } from './env.d'
 import litheLogo from './assets/lithe-mark-hero.svg'
 
@@ -45,6 +46,10 @@ function App(): JSX.Element {
   const [needsOnboarding, setNeedsOnboarding] = useState(false)
   const [safewordActive, setSafewordActive] = useState(false)
   const [status, setStatus] = useState<StatusResponse | null>(null)
+  // The `done` event of a stream carries the exact counts for the turn that
+  // just finished. The 5s poll reports the same numbers up to five seconds
+  // late, so when both exist this one wins.
+  const [liveTokens, setLiveTokens] = useState<StatusResponse['tokens']>(null)
 
   const [logs, setLogs] = useState<LogEvent[]>([])
   const [lastEventTime, setLastEventTime] = useState<number | null>(null)
@@ -136,7 +141,12 @@ function App(): JSX.Element {
     }
   }, [isOnline])
 
-  // Check backend health on mount (every 10s)
+  // Check backend health on mount (every 10s).
+  //
+  // Deliberately depends on nothing. This used to depend on `messages.length`,
+  // which tore down and rebuilt the 10s interval on every single token of a
+  // streaming reply -- the poll never actually got to run during a long answer.
+  // Hydrating the transcript is a separate concern with a separate effect below.
   useEffect(() => {
     const checkHealth = async (): Promise<void> => {
       try {
@@ -144,19 +154,6 @@ function App(): JSX.Element {
         setIsOnline(healthy.status)
         if (healthy.needs_onboarding) {
           setNeedsOnboarding(true)
-        }
-        if (healthy.status && messages.length === 0) {
-            const history = await window.litheAPI.getChatHistory()
-            if (history.history && history.history.length > 0) {
-                const mappedHistory = history.history.map((msg: any) => {
-                   let autoSummaryId
-                   if (msg.isAutoSummary && msg.id.startsWith('auto-summary-')) {
-                       autoSummaryId = parseInt(msg.id.split('-')[2], 10)
-                   }
-                   return { ...msg, autoSummaryId }
-                })
-                setMessages(mappedHistory)
-            }
         }
       } catch {
         setIsOnline(false)
@@ -166,7 +163,37 @@ function App(): JSX.Element {
     checkHealth()
     const interval = setInterval(checkHealth, 10000)
     return () => clearInterval(interval)
-  }, [messages.length])
+  }, [])
+
+  // Load the stored transcript once the backend is up.
+  //
+  // `hydratedRef` rather than `messages.length`: the guard has to mean "we have
+  // already asked", not "the list is empty". Reading the length would re-fetch
+  // the whole history the moment a user cleared the chat, undoing the clear.
+  const hydratedRef = useRef(false)
+  useEffect(() => {
+    if (!isOnline || hydratedRef.current) return
+    hydratedRef.current = true
+
+    window.litheAPI
+      .getChatHistory()
+      .then((history) => {
+        if (!history.history || history.history.length === 0) return
+        setMessages(
+          history.history.map((msg: any) => {
+            let autoSummaryId
+            if (msg.isAutoSummary && msg.id.startsWith('auto-summary-')) {
+              autoSummaryId = parseInt(msg.id.split('-')[2], 10)
+            }
+            return { ...msg, autoSummaryId }
+          })
+        )
+      })
+      .catch(() => {
+        // A failed hydration must be retryable rather than permanent.
+        hydratedRef.current = false
+      })
+  }, [isOnline])
 
   // Poll /api/status for HUD panel data (every 5s)
   useEffect(() => {
@@ -274,8 +301,9 @@ function App(): JSX.Element {
                 })
               } else if (event.type === 'tool_proposal') {
                 toolProposal = event.proposal
+              } else if (event.type === 'done' && event.tokens) {
+                setLiveTokens(event.tokens)
               }
-              // 'done' event — no action needed, stream ends naturally
             } catch {
               // Incomplete JSON — put back in buffer for next read
               buffer = lines.slice(i).join('\n')
@@ -356,6 +384,7 @@ function App(): JSX.Element {
       setIsLoading(true)
       await window.litheAPI.newChat()
       setMessages([])
+      setLiveTokens(null)
       setError(null)
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to start new chat.'
@@ -381,6 +410,10 @@ function App(): JSX.Element {
   }
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
+  // Mounted here rather than inside SystemPanel: it is a full-viewport overlay,
+  // and rendering one from inside a fixed bottom strip means inheriting that
+  // strip's stacking context.
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -446,7 +479,14 @@ function App(): JSX.Element {
       </div>
 
       {/* System strip at the bottom */}
-      <SystemPanel isOnline={isOnline} safewordActive={safewordActive} status={status} logs={logs} />
+      <SystemPanel
+        isOnline={isOnline}
+        safewordActive={safewordActive}
+        status={status}
+        logs={logs}
+        liveTokens={liveTokens}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+      />
       
       <CommandPalette 
         isOpen={isCommandPaletteOpen}
@@ -455,6 +495,8 @@ function App(): JSX.Element {
         onFocusSystem={handleFocusSystem}
         onAddIndex={handleAddIndex}
       />
+
+      {isSettingsOpen && <SettingsPanel onClose={() => setIsSettingsOpen(false)} />}
     </div>
   )
 }

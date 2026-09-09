@@ -64,14 +64,19 @@ def test_save_and_get_chat_history(mock_db_path):
     assert history[1]["tool_resolution"] == '{"status": "ok"}'
 
 def test_action_history(mock_db_path):
-    """Test action history for undo feature."""
-    memory.record_action("write", '{"path": "/test"}', True)
-    
+    """Test action history for undo feature.
+
+    `write_file`, not `write`: the undo stack now filters to the tool names
+    production actually records, and a test using an invented one would pass
+    against a filter that matched nothing real.
+    """
+    memory.record_action("write_file", '{"path": "/test"}', True)
+
     history = memory.get_action_history()
     assert len(history) == 1
     action_id = history[0]["id"]
-    assert history[0]["tool_name"] == "write"
-    
+    assert history[0]["tool_name"] == "write_file"
+
     memory.delete_action(action_id)
     history2 = memory.get_action_history()
     assert len(history2) == 0
@@ -154,3 +159,45 @@ def test_llm_config_endpoints(tmp_path, monkeypatch):
     assert brain.OLLAMA_MODEL == "llama3.2"      # brain's import-time copy rebound too
     assert "llama3.2" in env_file.read_text()    # persisted
     assert config.GEMINI_API_KEY == "AIzaSyTESTKEY1234"  # blank field == leave unchanged
+
+def test_undo_history_skips_reads(tmp_path, monkeypatch):
+    """"Undo last" must find the last *mutation*, not the last recorded action.
+
+    `record_action` is called for search_files and read_file too, because
+    action_history doubles as the audit log. With no filter, a user who asked a
+    question after deleting a file got "cannot undo search_files" — the delete
+    was still there, one row down, unreachable from the UI.
+    """
+    from fastapi.testclient import TestClient
+    from src.backend.server import app
+
+    monkeypatch.setattr("src.backend.memory.DB_PATH", str(tmp_path / "test_memory.db"))
+    memory.init_db()
+
+    memory.record_action("delete_file", '{"path": "/gone.txt"}', True)
+    memory.record_action("search_files", '{"keyword": "budget"}', False)
+    memory.record_action("read_file", '{"path": "/notes.md"}', False)
+
+    history = TestClient(app).get("/api/undo/history").json()["history"]
+
+    assert [a["tool_name"] for a in history] == ["delete_file"]
+
+    # The audit log is the other half of the contract: it must still see all of
+    # them, or filtering the undo stack would have quietly gutted the export.
+    assert len(memory.export_action_history()) == 3
+
+
+def test_undo_history_limit_is_a_query_param(tmp_path, monkeypatch):
+    """The popover lists a stack, so 5 hardcoded rows is no longer the answer."""
+    from fastapi.testclient import TestClient
+    from src.backend.server import app
+
+    monkeypatch.setattr("src.backend.memory.DB_PATH", str(tmp_path / "test_memory.db"))
+    memory.init_db()
+
+    for i in range(8):
+        memory.record_action("write_file", '{"path": "/f%d.txt"}' % i, True)
+
+    client = TestClient(app)
+    assert len(client.get("/api/undo/history").json()["history"]) == 8      # default 10
+    assert len(client.get("/api/undo/history?limit=3").json()["history"]) == 3
