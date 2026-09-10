@@ -62,9 +62,9 @@ function StatusChips({ isOnline, safewordActive, status }: StatusChipsProps): JS
           <span
             className={`system-stat__value system-action ${safewordActive ? 'system-stat__value--special' : ''}`}
             onClick={() => window.litheAPI.toggleSafeword(true)}
-            title="Enable session-wide safeword override"
+            title="Click to enable the session-wide safeword override"
           >
-            {safewordActive ? '● active' : '○ inactive (click to override)'}
+            {safewordActive ? '● active' : '○ inactive'}
           </span>
         )}
       </div>

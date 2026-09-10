@@ -85,17 +85,20 @@ function SystemPanel({
 
         <TokenBudget tokens={liveTokens ?? status?.tokens ?? null} budget={status?.token_budget_warning ?? null} />
 
-        <span className="system-separator" />
+        {/* One cluster, not four loose chips. The strip wraps at narrow widths,
+            and grouping the actions means they move to a second line together
+            instead of dribbling over one at a time behind a dangling separator. */}
+        <div className="system-panel__actions">
+          <UndoHistory />
 
-        <UndoHistory />
+          <span className="system-separator" />
 
-        <span className="system-separator" />
+          <AuditExport />
 
-        <AuditExport />
+          <span className="system-separator" />
 
-        <span className="system-separator" />
-
-        <SystemActions onOpenSettings={onOpenSettings} />
+          <SystemActions onOpenSettings={onOpenSettings} />
+        </div>
       </div>
     </div>
   )
