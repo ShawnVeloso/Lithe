@@ -1118,9 +1118,22 @@ body {
 .system-panel__content {
   display: flex;
   align-items: center;
-  gap: 20px;
+  column-gap: 16px;
+  /* The strip wraps rather than clipping, so a wrapped row needs breathing
+     room of its own -- without a row-gap the two lines sat flush and read as
+     a rendering fault rather than a reflow. */
+  row-gap: 8px;
   padding: 6px 12px;
   flex-wrap: wrap;
+}
+
+/* Readouts left, actions right. `margin-left: auto` also makes the cluster
+   wrap as one unit instead of shedding chips one at a time. */
+.system-panel__actions {
+  display: flex;
+  align-items: center;
+  column-gap: 16px;
+  margin-left: auto;
 }
 
 .system-stat {
