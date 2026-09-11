@@ -5,7 +5,9 @@ from src.backend.tools import (
     execute_delete,
     execute_write,
     execute_read,
+    execute_list_directory,
     MAX_READ_BYTES,
+    MAX_LIST_ENTRIES,
 )
 
 def test_execute_rename_safeword_missing(tmp_path):
@@ -117,7 +119,7 @@ def test_renaming_away_from_a_drive_root_is_refused(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# execute_read — the companion to search_files, which matches filenames only
+# execute_read — the companion to search_files, which returns a passage only
 # ---------------------------------------------------------------------------
 
 def test_execute_read_returns_file_contents(isolated_db, tmp_path):
@@ -151,3 +153,82 @@ def test_execute_read_refuses_protected_system_paths(isolated_db):
     """Reads go through the same path guard as the mutating tools."""
     result = execute_read(r"C:\Windows\System32\config\SAM")
     assert "protected system path" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# list_directory
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def workdir(tmp_path):
+    """A directory holding only what a test puts in it.
+
+    Not tmp_path itself: isolated_db writes lithe_test.db and its -wal/-shm
+    siblings there, and a listing test that asserts on exact contents would be
+    asserting on the fixture's bookkeeping.
+    """
+    target = tmp_path / "work"
+    target.mkdir()
+    return target
+
+
+def test_list_directory_names_folders_and_files(isolated_db, workdir):
+    (workdir / "sub").mkdir()
+    (workdir / "b.txt").write_text("x", encoding="utf-8")
+    (workdir / "a.txt").write_text("x", encoding="utf-8")
+
+    listing = execute_list_directory(str(workdir)).splitlines()
+
+    # Folders first, each marked, then files -- both alphabetical, so the
+    # model sees a stable ordering rather than whatever the filesystem returns.
+    assert listing == ["sub/", "a.txt", "b.txt"]
+
+
+def test_list_directory_is_not_recursive(isolated_db, workdir):
+    """The bound that keeps a listing from becoming a whole-drive walk."""
+    nested = workdir / "sub"
+    nested.mkdir()
+    (nested / "hidden-from-listing.txt").write_text("x", encoding="utf-8")
+
+    assert "hidden-from-listing.txt" not in execute_list_directory(str(workdir))
+
+
+def test_list_directory_refuses_a_drive_root(isolated_db):
+    """_validate_path first, so the refusal is inherited rather than restated."""
+    root = os.environ.get("SYSTEMDRIVE", "C:") + os.sep
+    assert "filesystem root" in execute_list_directory(root)
+
+
+def test_list_directory_caps_the_number_of_entries(isolated_db, workdir):
+    for i in range(MAX_LIST_ENTRIES + 25):
+        (workdir / f"file-{i:03d}.txt").write_text("x", encoding="utf-8")
+
+    result = execute_list_directory(str(workdir))
+
+    assert len(result.splitlines()) == MAX_LIST_ENTRIES + 1  # + the marker
+    assert f"showing {MAX_LIST_ENTRIES} of {MAX_LIST_ENTRIES + 25}" in result
+
+
+def test_list_directory_hides_noise_directories_but_not_files(isolated_db, workdir):
+    """EXCLUDED_DIRS applies to directories only.
+
+    A *file* named `env` is ordinary content, and filtering it would produce a
+    listing that quietly disagrees with what is in the folder.
+    """
+    (workdir / "node_modules").mkdir()
+    (workdir / "env").write_text("KEY=1", encoding="utf-8")
+
+    listing = execute_list_directory(str(workdir))
+
+    assert "node_modules" not in listing
+    assert "env" in listing
+
+
+def test_list_directory_rejects_a_file(isolated_db, workdir):
+    target = workdir / "a.txt"
+    target.write_text("x", encoding="utf-8")
+    assert "not a directory" in execute_list_directory(str(target))
+
+
+def test_list_directory_reports_an_empty_folder(isolated_db, workdir):
+    assert "is empty" in execute_list_directory(str(workdir))
