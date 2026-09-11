@@ -18,6 +18,10 @@ import json
 from src.backend.memory import record_action
 from src.backend.config import BINARY_CONTENT_EXTENSIONS
 from src.backend.extractors import extract_text
+# One definition of "not worth showing a human", shared with the indexer.
+# A second copy here would drift the way the tool names once drifted from the
+# dispatch map.
+from src.backend.indexer import EXCLUDED_DIRS
 
 # ---------------------------------------------------------------------------
 # Circuit Breaker configuration
@@ -79,6 +83,35 @@ def _validate_path(path: str, label: str = "path") -> str | None:
     for protected in PROTECTED_PATHS:
         if real.startswith(protected):
             return f"ERROR: Refusing to modify protected system path: {path}"
+    return None
+
+
+def hard_refusal(path: str) -> str | None:
+    """The subset of _validate_path refusals that must block a *proposal*.
+
+    _validate_path is a backstop inside the tool, so it fires only after the
+    UI has already rendered a card reading "DELETE: C:\\" and asked the user to
+    approve it. A dialog is not the right control for a target that is never
+    legitimate: there is nothing to decide. These two tiers -- a filesystem
+    root and PROTECTED_EXACT -- are therefore refused before the proposal is
+    built, and the error is handed back as the tool's result so the model
+    explains it in text.
+
+    Deliberately narrow. PROTECTED_PATHS keeps its post-hoc refusal and an
+    ordinary delete is still proposed, because those are decisions the user is
+    entitled to make.
+
+    Returns:
+        The refusal string, or None if the path is proposable.
+    """
+    if not path or not path.strip() or "\x00" in path:
+        return None
+    try:
+        real = os.path.normcase(os.path.realpath(path))
+    except (OSError, ValueError):
+        return None
+    if _is_filesystem_root(real) or real in PROTECTED_EXACT:
+        return _validate_path(path)
     return None
 
 
@@ -282,8 +315,8 @@ MAX_READ_BYTES = 40 * 1024
 def execute_read(path: str, conversation_id: str = "") -> str:
     """Reads a text file so the model can answer questions about its contents.
 
-    This is the companion to search_files, which only matches filenames. Without
-    it the model can locate a file but has no way to look inside it.
+    The companion to search_files, which returns only the passage that matched.
+    Without it the model can locate a file but cannot see the rest of it.
 
     Returns the file's text, or an ERROR string. Oversized files are truncated
     with an explicit header so the model knows it is seeing a fragment rather
@@ -353,3 +386,81 @@ def execute_read(path: str, conversation_id: str = "") -> str:
             conversation_id=conversation_id,
         )
         return err
+
+
+# A listing is model payload, so it is bounded the way a file read is. 100
+# entries describes a working folder comfortably; without a cap, one call on a
+# node_modules-sized directory would crowd the conversation out of its budget.
+MAX_LIST_ENTRIES = 100
+
+
+def execute_list_directory(path: str, conversation_id: str = "") -> str:
+    """Lists the immediate contents of one directory.
+
+    Non-recursive by design. A recursive listing of a large tree is the same
+    unbounded payload the whole-drive refusal exists to prevent, and
+    search_files already answers "find something anywhere".
+
+    _validate_path runs first, which buys the drive-root and protected-path
+    refusals for free rather than restating them here.
+    """
+    err = _validate_path(path, "path")
+    if err:
+        return err
+
+    def _do_list() -> str:
+        if not os.path.exists(path):
+            return f"ERROR: Directory not found: '{path}'"
+        if not os.path.isdir(path):
+            return f"ERROR: '{path}' is a file, not a directory. Use read_file."
+
+        try:
+            names = os.listdir(path)
+        except PermissionError:
+            return f"ERROR: Permission denied reading '{path}'."
+        except OSError as e:
+            return f"ERROR: Could not read '{path}': {e}"
+
+        # EXCLUDED_DIRS filters directories only. A *file* named `env` or
+        # `build` is ordinary content and hiding it would be a listing that
+        # quietly lies about what is in the folder.
+        dirs, files = [], []
+        for name in names:
+            try:
+                is_dir = os.path.isdir(os.path.join(path, name))
+            except OSError:
+                is_dir = False
+            if is_dir:
+                if name in EXCLUDED_DIRS:
+                    continue
+                dirs.append(name)
+            else:
+                files.append(name)
+
+        entries = [f"{n}/" for n in sorted(dirs, key=str.lower)]
+        entries += sorted(files, key=str.lower)
+        if not entries:
+            return f"'{path}' is empty."
+
+        listing = "\n".join(entries[:MAX_LIST_ENTRIES])
+        if len(entries) > MAX_LIST_ENTRIES:
+            listing += (
+                f"\n[TRUNCATED: showing {MAX_LIST_ENTRIES} of {len(entries)} "
+                "entries.]"
+            )
+        return listing
+
+    try:
+        result = _run_with_timeout(_do_list)
+    except Exception as e:
+        result = f"ERROR: Failed to list directory: {str(e)}"
+
+    record_action(
+        "list_directory",
+        json.dumps({"path": path}),
+        reversible=False,
+        decision_outcome="auto-executed",
+        execution_result="success" if not result.startswith("ERROR") else result,
+        conversation_id=conversation_id,
+    )
+    return result
