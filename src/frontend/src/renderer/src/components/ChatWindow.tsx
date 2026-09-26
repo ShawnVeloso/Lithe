@@ -153,7 +153,7 @@ function ChatWindow({ messages, isLoading, error, onSendMessage, onToolResponse,
         {isEmpty ? (
           <div className="welcome-boot">
             <img src={litheLogo} alt="Lithe Logo" className="boot-logo" />
-            <span className="boot-line boot-line--accent">LITHE v1.0.0</span>
+            <span className="boot-line boot-line--accent">LITHE v1.1.0</span>
             <span className="boot-line">initializing local actor...</span>
             <span className="boot-line boot-line--success">
               ✓ gemini connection {isOnline ? 'established' : 'pending'}
