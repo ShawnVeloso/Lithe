@@ -18,7 +18,7 @@
 ## Upgrades & Advanced Capabilities (U-01 to U-15)
 - [x] **U-01: SQLite WAL Mode** — `PRAGMA journal_mode=WAL` + `busy_timeout=5000` for safe concurrent indexer/LLM access.
 - [x] **U-02: Circuit Breakers** — 30s hard timeouts via `concurrent.futures`, path sanitization (normalized `realpath`, protected system dir guards).
-- [x] **U-03: Ollama Fallback** — Automatic offline failover to local models (`llama3.1`) with health check and native tool-calling.
+- [x] **U-03: Ollama Fallback** — Automatic offline failover to local models (`qwen2.5` by default, else whichever of `llama3.1`/`llama3.2` is installed) with health check and native tool-calling.
 - [x] **U-04: Event-Driven Memory** — `watchdog` file watcher with 1s debouncing for real-time filesystem change detection.
 - [x] **U-05: Heuristic Tagging** — Pure-function categorization engine (`heuristics.py`) adding semantic domain tags to indexed files.
 - [x] **U-06: HUD Redesign** — Monospace technical UI (amber `#ffb020` on near-black `#08080a`, hairline borders, three-pane layout).

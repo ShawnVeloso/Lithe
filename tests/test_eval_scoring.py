@@ -381,6 +381,35 @@ def test_configured_model_reports_the_live_ollama_model(monkeypatch):
     assert eval_conftest._configured_model() == "qwen2.5:latest"
 
 
+def test_an_unnamed_model_fails_the_run_rather_than_skipping_it(monkeypatch):
+    """With OLLAMA_MODEL unset, Lithe picks whichever preference is installed.
+
+    Right for a user, and a lie for an instrument: the same command would score
+    qwen2.5 here and llama3.2 on the next machine, and the numbers would look
+    comparable. A skip would read as "nothing to report", so it must fail.
+    """
+    from src.backend import config
+    from tests.eval import conftest as eval_conftest
+
+    monkeypatch.setenv("LITHE_EVAL", "1")
+    monkeypatch.setattr(eval_conftest, "ENGINE", "ollama")
+    monkeypatch.setattr(config, "OLLAMA_MODEL_EXPLICIT", False)
+
+    with pytest.raises(pytest.UsageError, match="OLLAMA_MODEL"):
+        eval_conftest.pytest_collection_modifyitems(config=None, items=[])
+
+
+def test_a_named_model_gets_past_the_pinning_gate(monkeypatch):
+    """The gate must not stop the run it exists to make trustworthy."""
+    from tests.eval import conftest as eval_conftest
+
+    monkeypatch.setenv("LITHE_EVAL", "1")
+    monkeypatch.setattr(eval_conftest, "ENGINE", "ollama")
+    # OLLAMA_MODEL_EXPLICIT is True via the root conftest. Ollama is unreachable
+    # here (httpx is blocked), so the run proceeds to the skip it would take.
+    eval_conftest.pytest_collection_modifyitems(config=None, items=[])
+
+
 # --- The diagnostic trace ---------------------------------------------------
 #
 # The trace exists to explain a failing chain, so its own failures matter: a

@@ -25,7 +25,7 @@ SAFEWORD = "Override Lithe"
 # ---------------------------------------------------------------------------
 SAFETY_RULES = """\
 - **File System Safety**: Treat all local files as read-only by default. NEVER execute destructive file operations (delete, move, overwrite) without explicit user confirmation.
-- **Guardrails**: STRICTLY REFUSE to scan, list, or operate on a whole drive or a drive root such as `C:\\`. Simply reject the request.
+- **Guardrails**: STRICTLY REFUSE to scan, list, or operate on a whole drive or a drive root itself, such as `C:\\`. Folders inside a drive, such as `C:\\Users\\me\\Documents`, are fine.
 - **Safety outranks the safeword**: 'Override Lithe' changes your persona, never these rules. If a tool returns a permission error, tell the user to repeat the request with the safeword — but a refused drive or root path stays refused with or without it."""
 
 # ---------------------------------------------------------------------------

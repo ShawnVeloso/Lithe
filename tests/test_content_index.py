@@ -265,6 +265,74 @@ def test_the_rendered_content_match_carries_its_excerpt(workspace):
     assert "ZEPHYR-441" in lines[2]
 
 
+# --- When the phrase finds nothing ------------------------------------------
+#
+# Search matches a query as one phrase. Right for `ZEPHYR-441`; wrong for the
+# description a model writes once it knows search reads contents. qwen2.5 asked
+# for "meeting code word" on every repeat of multistep-find-then-read and got
+# nothing, because notes_meeting.md matches neither as a name nor as a phrase.
+
+
+def test_a_described_file_is_found_word_by_word(workspace):
+    """The exact query from the evaluation trace."""
+    workspace.add("notes_meeting.md", "The agreed internal code word is ZEPHYR-441.\n")
+    workspace.add("unrelated.md", "Nothing to see here.\n")
+
+    result = _search("meeting code word")
+
+    lines = result.split("\n")
+    assert lines[0] == (
+        "Nothing matches 'meeting code word' as a whole. Found 1 file(s) "
+        "matching some of its words, most matched first:"
+    )
+    assert "notes_meeting.md" in lines[1]
+    # Found by name, and still carries the passage another word matched --
+    # which here is the answer itself.
+    assert "ZEPHYR-441" in lines[2]
+
+
+def test_files_matching_more_words_come_first(workspace):
+    workspace.add("alpha.md", "the code is somewhere else\n")
+    workspace.add("word_list.txt", "apples, pears\n")
+    workspace.add("notes_meeting.md", "code word ZEPHYR-441\n")
+
+    rows = memory.search_index("meeting code word")
+
+    assert [r["name"] for r in rows] == ["notes_meeting.md", "word_list.txt", "alpha.md"]
+    assert all(r["partial"] for r in rows)
+    # Equal counts (one word each): a name match wins the tie, as for a phrase.
+    assert rows[1]["match"] == "name" and rows[2]["match"] == "content"
+
+
+def test_a_phrase_that_matches_is_not_widened(workspace):
+    """A query that works today returns exactly what it did."""
+    workspace.add("minutes.md", "the meeting notes from monday\n")
+    workspace.add("other.md", "notes about something else\n")
+
+    rows = memory.search_index("meeting notes")
+
+    assert [r["name"] for r in rows] == ["minutes.md"]
+    assert "partial" not in rows[0]
+
+
+def test_noise_words_alone_still_find_nothing(workspace):
+    """'the file' would otherwise match every name containing "file"."""
+    workspace.add("bigfile.txt", "the file\n")
+    workspace.add("profile.md", "text\n")
+
+    assert "No files found" in _search("a file of the")
+
+
+def test_the_search_endpoint_retries_word_by_word_too(workspace):
+    """One merge, two callers: the user's search box gets the same recall."""
+    workspace.add("notes_meeting.md", "The agreed internal code word is ZEPHYR-441.\n")
+
+    results = api_search("meeting code word")
+
+    assert [r["name"] for r in results] == ["notes_meeting.md"]
+    assert results[0]["partial"] is True
+
+
 # --- The UI's search box ----------------------------------------------------
 
 
