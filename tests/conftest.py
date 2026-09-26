@@ -111,6 +111,11 @@ def no_real_indexing(request, monkeypatch):
     # would have the suite extracting text from the developer's real files.
     monkeypatch.setattr(server, "backfill_binary_content", lambda *a, **k: 0)
     monkeypatch.setattr(server, "settle_default_model_at_startup", lambda *a, **k: None)
+    # Imported inside the startup thread, so patched on its own module. It
+    # rewrites CHANGELOG.md from docs/agent-logs/INDEX.md in the working tree,
+    # and every suite run was silently discarding uncommitted edits to it.
+    from src.backend import changelog
+    monkeypatch.setattr(changelog, "generate_changelog", lambda *a, **k: None)
     yield
 
 
