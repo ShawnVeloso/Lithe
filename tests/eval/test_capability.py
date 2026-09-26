@@ -28,20 +28,29 @@ REPEATS = int(os.getenv("LITHE_EVAL_REPEATS", "3"))
 @pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])
 def test_capability(case, harness):
     failures = []
+    # cases.py has documented a {corpus} placeholder since it was written and
+    # nothing ever substituted it, so a case that used one would have sent the
+    # literal braces to the model. Replaced rather than str.format()'d: a
+    # prompt containing an ordinary brace must not raise.
+    prompt = case["prompt"].replace("{corpus}", str(harness.corpus))
+    # The trace records the prompt that was *sent*, not the template. The
+    # first run with a {corpus} case logged the literal placeholder, so the
+    # one record meant to explain a verdict could not say what the model saw.
+    sent = {**case, "prompt": prompt}
     for repeat in range(REPEATS):
         try:
-            outcome = harness.ask(case["prompt"], repeat=repeat)
+            outcome = harness.ask(prompt, repeat=repeat)
         except Exception as exc:  # a crash is a failed run, not a failed suite
             reason = f"raised {type(exc).__name__}: {exc}"
             failures.append(reason)
-            _trace(case, None, repeat, reason)
+            _trace(sent, None, repeat, reason)
             continue
         reason = evaluate(case, outcome, ENGINE)
         if reason:
             failures.append(reason)
         # After scoring, and given the same reason the scorecard will show, so
         # the trace can never disagree with the verdict it explains.
-        _trace(case, outcome, repeat, reason)
+        _trace(sent, outcome, repeat, reason)
 
     passed = REPEATS - len(failures)
     if passed == REPEATS:

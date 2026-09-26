@@ -22,6 +22,7 @@ EXPECTED_TOOL_NAMES = {
     "write_file",
     "search_files",
     "read_file",
+    "list_directory",
     "profile_data",
     "inline_chart",
     "create_watch_rule",

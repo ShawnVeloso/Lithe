@@ -39,7 +39,11 @@ from src.backend.context_budget import (
     trim_history,
 )
 from src.backend.ollama_bridge import call_name_and_args, to_ollama_messages
-from src.backend.tools import execute_rename, execute_delete, execute_write, execute_read
+from src.backend.tools import (
+    execute_rename, execute_delete, execute_write, execute_read,
+    execute_list_directory,
+    hard_refusal as tools_hard_refusal,
+)
 from src.backend.memory import (
     search_index,
     record_action,
@@ -376,11 +380,28 @@ OLLAMA_TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Reads the text contents of a file so you can answer questions about it. Use after search_files locates a path. Large files are truncated; binary files cannot be read.",
+            "description": "Reads the text contents of a file so you can answer questions about it. Use after search_files locates a path. Large files are truncated; text is extracted from PDF and DOCX.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "The absolute path of the file to read."}
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        # Nineteen words, deliberately. Usage guidance is what a longer
+        # description turns into, and lengthening one description moved the
+        # score 80% -> 69% with tool selection falling 4/6 -> 2/6.
+        "function": {
+            "name": "list_directory",
+            "description": "Lists the files and folders in one directory. Not recursive; refuses drive roots.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "The absolute path of the directory to list."}
                 },
                 "required": ["path"]
             }
@@ -669,7 +690,12 @@ def _ollama_drive_tool_rounds(messages, tool_map, rounds: int = 0, on_token=None
         results = []
         for call in calls:
             name, args = call_name_and_args(call)
-            if name in tool_map:
+            # Refused before proposal, so refused before execution too --
+            # the same rule as the Gemini path in _execute_tool_calls.
+            refusal = _hard_refusal(call)
+            if refusal:
+                result = refusal
+            elif name in tool_map:
                 try:
                     result = tool_map[name](**args)
                 except TypeError as e:
@@ -1053,12 +1079,20 @@ def _build_tool_functions():
 
         Use this after search_files has told you where a file is, or whenever the
         user asks what a file says. Large files are truncated with an explicit
-        marker; binary files (PDF, images) cannot be read.
+        marker; text is extracted from PDF and DOCX.
 
         Args:
             path: The absolute path of the file to read.
         """
         return execute_read(path, conversation_id=_current_conversation_id)
+
+    def list_directory(path: str) -> str:
+        """Lists the files and folders in one directory. Not recursive; refuses drive roots.
+
+        Args:
+            path: The absolute path of the directory to list.
+        """
+        return execute_list_directory(path, conversation_id=_current_conversation_id)
 
     def profile_data(file_path: str) -> str:
         """Reads a CSV or Excel file and returns summary statistics, data types, and null counts.
@@ -1101,9 +1135,35 @@ def _build_tool_functions():
         return _delete_watch_rule(rule_id, conversation_id=_current_conversation_id)
     return [
         rename_file, delete_file, write_file, search_files, read_file,
-        profile_data, inline_chart,
+        list_directory, profile_data, inline_chart,
         create_watch_rule, list_watch_rules, delete_watch_rule,
     ]
+
+
+# Every argument any mutating tool names a target with. rename_file takes two,
+# and both ends have to be checked -- a rename *onto* a drive root is as
+# irreversible as a rename of one.
+PATH_ARG_NAMES = ("path", "source", "destination")
+
+
+def _hard_refusal(call) -> str | None:
+    """The refusal a mutating call earns before it can be proposed at all.
+
+    The prompt already says to STRICTLY REFUSE whole-drive operations and
+    llama3.2 proposes `delete_file(path="C:\\")` anyway, which is the honest
+    reason this exists in code: instructions are not a control. Delegates to
+    tools.hard_refusal so the refusal text has exactly one source.
+    """
+    name, args = call_name_and_args(call)
+    if name not in MUTATING_TOOLS:
+        return None
+    for arg_name in PATH_ARG_NAMES:
+        value = (args or {}).get(arg_name)
+        if isinstance(value, str):
+            refusal = tools_hard_refusal(value)
+            if refusal:
+                return refusal
+    return None
 
 
 def _first_mutating(calls):
@@ -1111,10 +1171,16 @@ def _first_mutating(calls):
 
     `calls` may be Gemini function_call objects or Ollama's tool_call dicts;
     call_name_and_args reduces both so the two engines share one gate.
+
+    A hard-refused call is skipped rather than returned: it does not need
+    confirmation, it needs refusing, and returning it here is what put a
+    "DELETE: C:\\" card in front of the user. Both engines' gates and the
+    streaming one all route through this function, so the check belongs here
+    rather than in three copies.
     """
     for call in calls or []:
         name, _ = call_name_and_args(call)
-        if name in MUTATING_TOOLS:
+        if name in MUTATING_TOOLS and not _hard_refusal(call):
             return call
     return None
 
@@ -1170,7 +1236,13 @@ def _execute_tool_calls(function_calls, tool_map):
     chart_data_uri = None
 
     for call in function_calls:
-        if call.name in tool_map:
+        # A hard-refused call was never proposed, so it must not execute
+        # either. Feeding the refusal back as the result is what lets the
+        # model tell the user why, instead of the turn ending in silence.
+        refusal = _hard_refusal(call)
+        if refusal:
+            result = refusal
+        elif call.name in tool_map:
             try:
                 result = tool_map[call.name](**call.args)
             except TypeError as e:
@@ -1235,9 +1307,14 @@ def _drive_tool_rounds(response, contents, config, tool_map, rounds: int = 0):
         # sitting behind a search_files was executed with no confirmation at
         # all. The gate the whole design rests on was one parallel call away
         # from being bypassed.
-        call = _first_mutating(response.function_calls) or response.function_calls[0]
+        mutating = _first_mutating(response.function_calls)
+        call = mutating or response.function_calls[0]
 
-        if call.name in MUTATING_TOOLS:
+        # `mutating is not None` rather than `call.name in MUTATING_TOOLS`:
+        # the two were equivalent until _first_mutating began skipping
+        # hard-refused calls, at which point the name check would have
+        # proposed the very call the gate just declined to propose.
+        if mutating is not None:
             _pending_session = contents.copy()
             # record() rather than a bare append: the proposal is a real turn,
             # and if it is not persisted the function_response saved on
@@ -1529,10 +1606,8 @@ def chat_stream(user_message: str):
         if accumulated_function_calls:
             # As in _drive_tool_rounds: the confirmation gate must consider
             # every call in the turn, not just the first one.
-            call = (
-                _first_mutating(accumulated_function_calls)
-                or accumulated_function_calls[0]
-            )
+            mutating = _first_mutating(accumulated_function_calls)
+            call = mutating or accumulated_function_calls[0]
 
             # Rebuild the model turn from the streamed pieces, reusing the
             # original call parts so their thought signatures survive. Falling
@@ -1551,7 +1626,7 @@ def chat_stream(user_message: str):
                 )
             model_content = types.Content(role="model", parts=model_parts)
 
-            if call.name in MUTATING_TOOLS:
+            if mutating is not None:
                 # Mutating tool — pause for confirmation.
                 global _pending_session, _pending_tool_calls, _pending_config, _pending_tool_map
                 global _pending_rounds_used
