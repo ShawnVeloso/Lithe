@@ -25,7 +25,7 @@ Built for developers who want the power of AI coding assistants without the bloa
   A stunning, custom-built React + Electron user interface heavily inspired by terminal aesthetics. Features an amber-on-near-black palette, monospace fonts, hairline borders, and live telemetry for both file indexing and LLM token usage.
 
 - 📴 **Offline Fallback (Ollama)**
-  Lithe is built with a robust model-routing architecture. If the primary Gemini API goes offline or you disconnect from the internet, Lithe will gracefully and automatically failover to your local Ollama models (e.g., `llama3`), allowing you to keep coding completely offline.
+  Lithe is built with a robust model-routing architecture. If the primary Gemini API goes offline or you disconnect from the internet, Lithe will gracefully and automatically failover to your local Ollama models, allowing you to keep coding completely offline. It uses `qwen2.5` by default, or `llama3.1` / `llama3.2` if that is what you already have pulled; set `OLLAMA_MODEL` (or pick one in Settings) to choose explicitly.
 
 ## 🏗️ Architecture Stack
 
@@ -39,7 +39,7 @@ Lithe is split into two highly optimized layers communicating via REST and WebSo
 ### Prerequisites
 - Node.js (v18+)
 - Python (3.10+)
-- [Ollama](https://ollama.com/) (Optional, for offline fallback)
+- [Ollama](https://ollama.com/) (Optional, for offline fallback — `ollama pull qwen2.5`)
 - A Gemini API Key (Optional, for primary intelligence)
 
 ### Installation

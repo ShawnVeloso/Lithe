@@ -260,19 +260,18 @@ CASES = [
 
     # -- Multi-step (needs the bounded loop + read_file) --------------------
     {
-        # A model limitation, and now measured rather than asserted. Lithe
-        # chains fine (see tests/test_ollama_path.py). On the same corpus, same
-        # seed and same harness: **qwen2.5 passes 3/3, llama3.2 fails 0/3** --
-        # it either answers that it "cannot read files" (with read_file in the
-        # schema it was just handed) or reads the file and still omits the
-        # token. Kept as a known_gap because llama3.2 is the shipped default;
-        # it closes on a 7B model, so whether to change that default is a
-        # separate decision about 4.7GB and 7B inference, not a Lithe fix.
+        # Was a known_gap blamed on llama3.2, which searches "meeting", finds
+        # the file, and then will not read it. qwen2.5 passed 3/3 on 09-08 --
+        # and 0/3 once it was the default, for a reason that is Lithe's: told
+        # (correctly, since M1) that search_files matches file *contents*, it
+        # queries "meeting code word", and search treats that as one exact
+        # phrase in both the filename and the FTS5 index, so nothing matches.
+        # Scored rather than re-flagged: this is a Lithe defect now, and a
+        # known_gap would hide it exactly as it hid the model gain.
         "id": "multistep-find-then-read",
         "category": "multi-step",
         "prompt": "find the file about the meeting, then tell me the code word inside it",
         "must_contain": [SECRET_TOKEN],
-        "known_gap": True,
     },
     {
         # Not a gap. It was closed by the Ollama parity pass and the scorecard

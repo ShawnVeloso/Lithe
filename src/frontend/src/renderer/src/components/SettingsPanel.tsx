@@ -223,7 +223,7 @@ function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element {
               <input
                 id="settings-model"
                 value={ollamaModel}
-                placeholder="llama3.2"
+                placeholder="qwen2.5"
                 onChange={(e) => setOllamaModel(e.target.value)}
               />
             )}

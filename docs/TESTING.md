@@ -4,7 +4,7 @@ Two separate things live in `tests/`:
 
 | | Unit + contract suite | Capability evaluation |
 |---|---|---|
-| Command | `python -m pytest` | `LITHE_EVAL=1 python -m pytest -m eval` |
+| Command | `python -m pytest` | `LITHE_EVAL=1 OLLAMA_MODEL=qwen2.5 python -m pytest -m eval` |
 | Speed | seconds | minutes |
 | Network | none (blocked) | real LLM calls (local Ollama by default) |
 | Cost | free | free on Ollama; consumes quota on Gemini |
@@ -86,13 +86,16 @@ and `config.DB_PATH`.
 ## The capability evaluation
 
 ```
-LITHE_EVAL=1 python -m pytest -m eval                          # scores Ollama
-LITHE_EVAL=1 LITHE_EVAL_REPEATS=1 python -m pytest -m eval     # quicker, noisier
-LITHE_EVAL=1 LITHE_EVAL_ENGINE=gemini python -m pytest -m eval # needs a paid key
+LITHE_EVAL=1 OLLAMA_MODEL=qwen2.5 python -m pytest -m eval                        # scores Ollama
+LITHE_EVAL=1 OLLAMA_MODEL=qwen2.5 LITHE_EVAL_REPEATS=1 python -m pytest -m eval   # quicker, noisier
+LITHE_EVAL=1 LITHE_EVAL_ENGINE=gemini python -m pytest -m eval                    # needs a paid key
 ```
 
 Requires `LITHE_EVAL=1`; otherwise every case skips. `addopts = -m "not eval"`
-keeps it out of normal runs entirely.
+keeps it out of normal runs entirely. A full 3-repeat pass on qwen2.5 took 6m40s
+on the development machine (GPU); budget far more on a CPU-only one. Keep the
+repeats for a recorded number: trimming them to save time makes the baseline
+noisier than the one it replaces.
 
 ### Which engine gets scored
 
@@ -122,6 +125,15 @@ Before collection the harness checks the chosen engine can actually serve:
 Ollama must be running *and* have `OLLAMA_MODEL` pulled; Gemini gets one cheap
 call. A failure skips the suite in seconds with the reason, instead of a
 nine-minute run burning fifty unusable calls.
+
+**On Ollama, the model must be named.** With `OLLAMA_MODEL` unset, Lithe uses
+the first of `config.OLLAMA_MODEL_PREFERENCE` (qwen2.5, llama3.1, llama3.2) that
+is installed. That is right for a user and wrong for an instrument: the same
+command would score qwen2.5 on one machine and llama3.2 on the next, and the
+two numbers would look comparable. So an unnamed model **fails** the run
+(exit 4) rather than skipping it, because a skipped suite reads as "nothing to
+report". A value in the active `.env` counts as named, since it does not depend
+on what is installed. The scorecard header shows which model it was either way.
 
 Passing pre-flight is not a promise the run will finish — it proves one request
 is allowed, not the ~80–100 a full pass needs. So the Gemini path also aborts
@@ -324,11 +336,15 @@ cases someone chose to write. Do not quote it as a fact about Lithe. Its only
 job is the **delta**: run it before a change and after, and see which cases
 moved.
 
-Cases marked `known_gap` are documented limitations — currently one: a
-multi-step chain the shipped default model will not attempt. They are
-excluded from the score and reported
-separately, so they show up as capability that is missing rather than as a
-regression. When one flips to "now passing", that gap has been closed.
+Cases marked `known_gap` are documented limitations, excluded from the score
+and reported separately so they show up as capability that is missing rather
+than as a regression. When one flips to "now passing", that gap has been
+closed — and the flag must then come off, or a later regression in that case
+can never fail the run. There are currently none. The last,
+`multistep-find-then-read`, was blamed on llama3.2 and is scored since qwen2.5
+became the default — where it fails for a reason that is Lithe's own (a
+multi-word query is searched as one exact phrase), which is precisely the kind of
+failure a `known_gap` flag must not hide.
 
 ### The diagnostic trace
 

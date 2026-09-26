@@ -24,7 +24,7 @@ from fastapi.requests import Request
 from pydantic import BaseModel
 from typing import List, Optional
 
-from src.backend.brain import chat
+from src.backend.brain import chat, settle_default_model_at_startup
 from src.backend.indexer import walk_and_index, backfill_binary_content
 from src.backend.watcher import start_watcher
 from src.backend.logger import logger
@@ -61,6 +61,9 @@ def auto_index_and_watch():
     logger.info("[Lithe] Auto-indexing whitelisted directories in the background...")
     thread = threading.Thread(target=_index_then_watch, daemon=True)
     thread.start()
+    # Its own thread: one /api/tags read, which must not wait behind a
+    # forty-second walk, nor delay it when Ollama is slow to refuse.
+    threading.Thread(target=settle_default_model_at_startup, daemon=True).start()
 
 app.add_middleware(
     CORSMiddleware,
@@ -416,6 +419,7 @@ async def get_ollama_models():
     embedding_only = sorted(
         m.get("name", "") for m in (catalog or []) if brain._is_embedding_only(m)
     )
+    brain._settle_default_model(installed)
     current = brain.OLLAMA_MODEL
     return {
         "reachable": installed is not None,
