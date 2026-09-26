@@ -1,9 +1,9 @@
-> **STATUS — updated 2026-09-26.** Branch `feat/qwen-default`, stacked on #21 (M1) → #20
-> (phases 2–4) → `main`. Suite 314 passing, 1 xfailed.
+> **STATUS — updated 2026-09-26.** Branch `feat/qwen-default` (#22), stacked on #21 (M1) → #20
+> (phases 2–4) → `main`. Suite 319 passing, 1 xfailed.
 > **M1: 81% (21 scored, llama3.2, seed 20260905)**, compared against a non-reproducing 75%.
 > **M2: 91% (22 scored, qwen2.5, seed 20260905)** — a new baseline, not comparable to either.
-> Two Lithe-owned failures surfaced and are *recorded, not fixed*: multi-word search
-> queries match as one exact phrase, and `SAFETY_RULES` makes qwen2.5 refuse any `C:\` path.
+> It surfaced two Lithe-owned failures, then fixed (search retries a phrase word by word;
+> `SAFETY_RULES` says folders inside a drive are fine): **100% (22), qwen2.5**, same seed.
 > See CHANGELOG 2026-09-26.
 >
 > | Phase | State | Landed as |
@@ -14,7 +14,7 @@
 > | 3 — Ollama timeout + streaming | **done** | `feat/binary-content-extraction` |
 > | 4 — frontend pass | **done** | `feat/binary-content-extraction` |
 > | M1 — safety, prompts, `list_directory` | **done** | #21 — *81%, 21 cases* |
-> | M2 — qwen2.5 default | **done** | `feat/qwen-default` — *91%, 22 cases* |
+> | M2 — qwen2.5 default | **done** | #22 — *91% → 100% after two fixes, 22 cases* |
 > | 7 — packaging | **next** | *must be last* |
 >
 > Finished plans are archived in [`docs/plans/`](docs/plans/).

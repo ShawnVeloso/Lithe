@@ -1112,10 +1112,16 @@ def _build_tool_functions():
             if len(results) >= SEARCH_RESULT_LIMIT
             else ""
         )
-        return (
-            f"Found {len(results)} file(s) matching '{keyword}'{capped}:\n"
-            + "\n".join(lines)
-        )
+        if results[0].get("partial"):
+            # Said outright: a list of near misses presented as matches would
+            # invite the model to treat the first one as the answer.
+            header = (
+                f"Nothing matches '{keyword}' as a whole. Found {len(results)} "
+                f"file(s) matching some of its words, most matched first{capped}:"
+            )
+        else:
+            header = f"Found {len(results)} file(s) matching '{keyword}'{capped}:"
+        return header + "\n" + "\n".join(lines)
 
     def read_file(path: str) -> str:
         """Reads the text contents of a file so you can answer questions about it.
