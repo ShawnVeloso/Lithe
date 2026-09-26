@@ -342,9 +342,11 @@ than as a regression. When one flips to "now passing", that gap has been
 closed — and the flag must then come off, or a later regression in that case
 can never fail the run. There are currently none. The last,
 `multistep-find-then-read`, was blamed on llama3.2 and is scored since qwen2.5
-became the default — where it fails for a reason that is Lithe's own (a
-multi-word query is searched as one exact phrase), which is precisely the kind of
-failure a `known_gap` flag must not hide.
+became the default — where it promptly failed for a reason that was Lithe's own
+(a multi-word query searched as one exact phrase), precisely the kind of failure
+a `known_gap` flag must not hide. Search now retries such a query word by word,
+and the case passes; it passes from search's excerpt alone, though, so chaining
+is exercised only by `multistep-profile-then-chart`.
 
 ### The diagnostic trace
 

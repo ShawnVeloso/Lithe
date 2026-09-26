@@ -266,8 +266,12 @@ CASES = [
         # (correctly, since M1) that search_files matches file *contents*, it
         # queries "meeting code word", and search treats that as one exact
         # phrase in both the filename and the FTS5 index, so nothing matches.
-        # Scored rather than re-flagged: this is a Lithe defect now, and a
-        # known_gap would hide it exactly as it hid the model gain.
+        # Scored rather than re-flagged, and fixed by search retrying such a
+        # query word by word (3/3 since). Note what it measures now: the
+        # retry's row for notes_meeting.md carries the passage holding the
+        # code word, so qwen2.5 answers from search alone, never calling
+        # read_file. Correct behaviour -- but chaining is now exercised only
+        # by multistep-profile-then-chart.
         "id": "multistep-find-then-read",
         "category": "multi-step",
         "prompt": "find the file about the meeting, then tell me the code word inside it",
