@@ -67,13 +67,23 @@ TOKEN_BUDGET_WARNING: int = int(os.getenv("TOKEN_BUDGET_WARNING", "1500000"))
 # Lithe falls back to a local Ollama model. These values are configurable
 # via .env so users can point to different models or remote Ollama instances.
 OLLAMA_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
-# llama3.2 rather than llama3.1: the default has to name a model people
-# actually have, because a default naming an unpulled model is how the
-# fallback sat broken for weeks -- the health check passed, the real
-# request came back "model not found", and every Gemini outage looked like
-# a Lithe bug. It is also the model the capability evaluation is scored on.
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
-OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "60"))
+# The default is a preference list, not a literal. qwen2.5 is the best local
+# model Lithe has measured -- it chains find-then-read where llama3.2 cannot --
+# but it is a 4.7GB pull. Flipping the literal from llama3.2 would silently move
+# every user who never saved a model in Settings, with llama3.2 pulled and
+# working, onto a model they do not have: a default naming an unpulled model is
+# exactly how the fallback once sat broken for weeks.
+#
+# So an explicit OLLAMA_MODEL (shell, .env, or saved through Settings) always
+# wins verbatim. Otherwise brain settles on the first of these that is actually
+# installed, and until it can ask Ollama -- or when nothing here is pulled --
+# the first entry stands, so a fresh user is told to pull qwen2.5.
+OLLAMA_MODEL_PREFERENCE: tuple[str, ...] = ("qwen2.5", "llama3.1", "llama3.2")
+OLLAMA_MODEL_EXPLICIT: bool = bool(os.getenv("OLLAMA_MODEL", "").strip())
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "").strip() or OLLAMA_MODEL_PREFERENCE[0]
+# 150 rather than 60: a 7B model loading from cold routinely needs more than a
+# minute to produce its first token.
+OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "150"))
 
 # ---------------------------------------------------------------------------
 # F-03: Memory & Indexer configuration
@@ -216,7 +226,8 @@ def update_llm_config(
     `0` as its blank, and is clamped rather than rejected: the setting exists to
     rescue a slow machine, so a nonsense value should still leave a working one.
     """
-    global GEMINI_API_KEY, OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT, NEEDS_ONBOARDING
+    global GEMINI_API_KEY, OLLAMA_URL, OLLAMA_MODEL, OLLAMA_MODEL_EXPLICIT
+    global OLLAMA_TIMEOUT, NEEDS_ONBOARDING
     from dotenv import set_key
 
     env_path = _ACTIVE_ENV_PATH or _APPDATA_ENV
@@ -239,6 +250,9 @@ def update_llm_config(
     GEMINI_API_KEY = api_key.strip() or GEMINI_API_KEY
     OLLAMA_URL = ollama_url.strip() or OLLAMA_URL
     OLLAMA_MODEL = ollama_model.strip() or OLLAMA_MODEL
+    # A saved model is a chosen model: it is in the .env now, and would be
+    # explicit after a restart anyway.
+    OLLAMA_MODEL_EXPLICIT = OLLAMA_MODEL_EXPLICIT or bool(ollama_model.strip())
     OLLAMA_TIMEOUT = timeout or OLLAMA_TIMEOUT
     NEEDS_ONBOARDING = not GEMINI_API_KEY
 

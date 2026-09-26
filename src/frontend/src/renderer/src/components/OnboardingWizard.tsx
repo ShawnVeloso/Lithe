@@ -59,6 +59,12 @@ function OnboardingWizard(): JSX.Element {
           {isSubmitting ? 'Saving...' : 'Connect to Brain'}
         </button>
       </form>
+      {/* The default names the model worth pulling; a machine that already has
+          llama3.2 or llama3.1 is used as-is, so this is advice, not a requirement. */}
+      <p style={{ color: 'var(--text-secondary)', marginTop: '2rem', textAlign: 'center', maxWidth: 400, fontSize: '0.85em' }}>
+        Optional: to keep working when Gemini is unreachable, install Ollama and run{' '}
+        <code style={{ fontFamily: 'var(--font-mono)' }}>ollama pull qwen2.5</code>.
+      </p>
     </div>
   )
 }
