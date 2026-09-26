@@ -171,6 +171,14 @@ changes is **not comparable** to a score measured after:
 The eval drives `brain.chat()`, never `chat_stream()` — which is why the
 streaming fallback can be changed without touching a measured path.
 
+That last row is load-bearing rather than descriptive. `_ollama_post` has two
+modes off one callback: without it, the blocking request `chat()` has always
+sent; with it, `stream: true` reassembled into the same `message` dict. The tool
+loop and `OllamaRecorder._harvest` both read `resp.json()["message"]`, so an
+NDJSON body reaching either would raise and silently score every tool case zero.
+`tests/test_ollama_streaming.py::test_chat_still_posts_a_blocking_request` is
+the guard: it makes `httpx.stream` raise, then runs a whole turn.
+
 **This is enforced, not remembered.** `tests/test_prompt_payload.py` pins the
 exact `/api/chat` body against `tests/support/golden_ollama_payload.json`.
 A diff of that file is the review signal that a change is eval-affecting.

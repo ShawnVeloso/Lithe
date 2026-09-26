@@ -68,8 +68,14 @@ def sent_payload(isolated_db, monkeypatch):
 
     monkeypatch.setattr(httpx, "post", capture)
     monkeypatch.setattr(brain, "_client", _UnavailableGemini())
-    # Pre-flight only has to believe the configured model is present.
-    monkeypatch.setattr(brain, "_ollama_models", lambda: [f"{brain.OLLAMA_MODEL}:latest"])
+    # Pre-flight only has to believe the configured model is present. Both
+    # spellings, because OLLAMA_MODEL may already carry a tag -- an .env naming
+    # `qwen2.5:latest` produced `qwen2.5:latest:latest` here, and the guard on
+    # the eval payload silently errored out on that machine instead of running.
+    monkeypatch.setattr(
+        brain, "_ollama_models",
+        lambda: [brain.OLLAMA_MODEL, f"{brain.OLLAMA_MODEL}:latest"],
+    )
 
     brain.chat("hello")
     assert captured, "no /api/chat request was made"

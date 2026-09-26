@@ -171,7 +171,12 @@ contextBridge.exposeInMainWorld('litheAPI', {
     return await response.json()
   },
 
-  setLlmConfig: async (cfg: {api_key?: string; ollama_url?: string; ollama_model?: string}) => {
+  setLlmConfig: async (cfg: {
+    api_key?: string
+    ollama_url?: string
+    ollama_model?: string
+    ollama_timeout?: number
+  }) => {
     const response = await fetch(`${PYTHON_SERVER_URL}/api/config/llm`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -211,8 +216,9 @@ contextBridge.exposeInMainWorld('litheAPI', {
   /**
    * Undo API
    */
-  getUndoHistory: async () => {
-    const response = await fetch(`${PYTHON_SERVER_URL}/api/undo/history`)
+  getUndoHistory: async (limit?: number) => {
+    const query = limit ? `?limit=${limit}` : ''
+    const response = await fetch(`${PYTHON_SERVER_URL}/api/undo/history${query}`)
     if (!response.ok) {
       throw new Error(`Server error: ${response.status} ${response.statusText}`)
     }

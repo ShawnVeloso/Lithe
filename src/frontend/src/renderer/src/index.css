@@ -636,6 +636,81 @@ body {
   color: var(--danger);
 }
 
+/* --- Settings sections (Cloud / Local) --- */
+/* The two engines are primary and fallback, not two equal options, so each
+   section carries a one-line hint saying which is which. */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+}
+
+.settings-section__title {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+
+.settings-section__hint {
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+/* --- Local engine status line --- */
+/* Three severities off one shape: the icon carries the state so the text does
+   not have to open by naming it. */
+.settings-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.settings-status__icon {
+  flex-shrink: 0;
+}
+
+.settings-status--ok {
+  color: var(--success);
+}
+
+.settings-status--warn {
+  color: var(--accent);
+}
+
+.settings-status--error {
+  color: var(--danger);
+}
+
+.settings-test-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  padding: 3px 6px;
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.settings-test-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.settings-test-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* --- Message Feed --- */
 .message-feed {
   flex: 1;
@@ -1043,9 +1118,22 @@ body {
 .system-panel__content {
   display: flex;
   align-items: center;
-  gap: 20px;
+  column-gap: 16px;
+  /* The strip wraps rather than clipping, so a wrapped row needs breathing
+     room of its own -- without a row-gap the two lines sat flush and read as
+     a rendering fault rather than a reflow. */
+  row-gap: 8px;
   padding: 6px 12px;
   flex-wrap: wrap;
+}
+
+/* Readouts left, actions right. `margin-left: auto` also makes the cluster
+   wrap as one unit instead of shedding chips one at a time. */
+.system-panel__actions {
+  display: flex;
+  align-items: center;
+  column-gap: 16px;
+  margin-left: auto;
 }
 
 .system-stat {
@@ -1088,6 +1176,150 @@ body {
   height: 14px;
   background: var(--border);
   flex-shrink: 0;
+}
+
+/* --- Session Token Budget --- */
+.token-budget {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.token-budget__track {
+  width: 64px;
+  height: 4px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.token-budget__fill {
+  height: 100%;
+  background: var(--text-dim);
+  transition: width var(--transition-fast);
+}
+
+.token-budget__fill--over {
+  background: var(--accent);
+}
+
+/* --- System strip: clickable chips --- */
+.system-action {
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.system-action:hover {
+  opacity: 1;
+}
+
+.system-engine {
+  margin-left: 12px;
+  color: var(--text-dim);
+  text-transform: none;
+}
+
+.system-engine--local {
+  color: var(--info);
+}
+
+/* --- Undo popover --- */
+/* The strip is fixed to the bottom, so the popover opens upward from its
+   trigger rather than downward off-screen. */
+.undo-history {
+  position: relative;
+}
+
+.undo-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  min-width: 320px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.undo-popover__title {
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.undo-popover__empty {
+  color: var(--text-dim);
+  padding: 4px 0;
+}
+
+.undo-popover__error {
+  color: var(--danger);
+  margin-top: 6px;
+}
+
+.undo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.undo-row__desc {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.undo-row__time {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.undo-row__action {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.undo-row__action--disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+/* --- Audit export form --- */
+.audit-export {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.audit-export__control {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-family: inherit;
+  outline: none;
+  padding: 0 4px;
+}
+
+.audit-export__control option {
+  background: var(--panel);
+}
+
+.audit-export__download {
+  background: var(--text-dim);
+  color: var(--bg);
+  border: none;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.audit-export__download:hover {
+  background: var(--text);
 }
 
 /* --- System Log Drawer --- */
@@ -1278,6 +1510,58 @@ body {
   border-radius: 2px;
   border: 1px solid var(--border);
   margin: 8px 0;
+}
+
+/* --- Chart figure + hover toolbar --- */
+/* The toolbar is hidden until hover or keyboard focus. `:focus-within` is not
+   optional here: hiding it on anything but hover would make the buttons
+   unreachable by tab, which is how an "invisible until hover" control usually
+   ends up inaccessible. */
+.message-figure {
+  display: inline-block;
+  position: relative;
+  margin: 0;
+}
+
+.message-figure__toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: -4px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.message-figure:hover .message-figure__toolbar,
+.message-figure:focus-within .message-figure__toolbar {
+  opacity: 1;
+}
+
+.message-figure__toolbar button {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.message-figure__toolbar button:hover {
+  color: var(--accent);
+}
+
+.message-figure__toast {
+  font-size: 10px;
+  color: var(--success);
+}
+
+.chart-modal__image {
+  max-width: 92vw;
+  max-height: 92vh;
+  border: 1px solid var(--border);
+  background: var(--panel);
 }
 
 /* --- Markdown Rendering (assistant + user message bodies) --- */

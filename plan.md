@@ -1,14 +1,14 @@
-> **STATUS — updated 2026-09-09.** Branch `feat/search-parity-and-safety`.
-> Suite 241 passing, 1 xfailed. Baseline 81% (16 cases, llama3.2, seed 20260905).
+> **STATUS — updated 2026-09-10.** Branch `feat/binary-content-extraction`.
+> Suite 280 passing, 1 xfailed. Baseline 81% (16 cases, llama3.2, seed 20260905).
 >
 > | Phase | State | Landed as |
 > |---|---|---|
 > | 0 — payload golden | **done** | `c4674e4` |
 > | 1 — search parity (watcher, `/api/search`, IndexPanel) | **done** | `61c40bb` |
-> | 2 — PDF + DOCX extraction | next | — |
-> | 3 — Ollama timeout + streaming | todo | — |
-> | 4 — frontend pass | todo | — |
-> | M1 — safety, prompts, `list_directory` | todo | *first eval run* |
+> | 2 — PDF + DOCX extraction | **done** | this branch |
+> | 3 — Ollama timeout + streaming | **done** | this branch |
+> | 4 — frontend pass | **done** | this branch |
+> | M1 — safety, prompts, `list_directory` | **next** | *first eval run* |
 > | M2 — qwen2.5 default | todo | *second eval run* |
 > | 7 — packaging | todo | *must be last* |
 >

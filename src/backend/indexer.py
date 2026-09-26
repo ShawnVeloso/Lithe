@@ -17,7 +17,9 @@ from src.backend.config import (
     EXCLUDED_EXTENSIONS,
     CONTENT_INDEXED_EXTENSIONS,
     CONTENT_INDEX_MAX_BYTES,
+    BINARY_CONTENT_EXTENSIONS,
 )
+from src.backend.extractors import extract_text
 from src.backend.memory import (
     upsert_files,
     get_all_files_mtime,
@@ -51,8 +53,10 @@ BATCH_SIZE = 500
 def index_file_content(file_path: str, ext: str) -> bool:
     """Put a file's searchable text in the content index. True if it was stored.
 
-    Only the head of a file is indexed (CONTENT_INDEX_MAX_BYTES), matching what
-    retrieval will actually show. A file whose match lies past that boundary is
+    Text formats are read as UTF-8; PDF and DOCX are handed to extractors.py,
+    which pulls their text out of the container. Only the head of a file is
+    indexed (CONTENT_INDEX_MAX_BYTES), matching what retrieval will actually
+    show. A file whose match lies past that boundary is
     not found, which is the honest failure: the alternative is reporting a match
     the model then cannot quote.
 
@@ -60,17 +64,27 @@ def index_file_content(file_path: str, ext: str) -> bool:
     is ordinary -- a lock, a permission, a name the filesystem accepts and the
     decoder does not -- and one of them must not end the walk.
     """
-    if ext not in CONTENT_INDEXED_EXTENSIONS:
-        return False
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="strict") as handle:
-            content = handle.read(CONTENT_INDEX_MAX_BYTES)
-    except (UnicodeDecodeError, OSError, ValueError):
-        # A file with a text extension that does not decode is not text. Left
-        # out rather than stored as replacement characters, which would match
-        # nothing a user would ever search for.
-        return False
-    if not content.strip():
+    if ext in BINARY_CONTENT_EXTENSIONS:
+        # PDF and DOCX hold text but are not text. extract_text owns its own
+        # caps and swallows its own failures -- pypdf alone raises PdfReadError,
+        # RecursionError and struct.error, none of which the tuple below would
+        # have caught, so routing these through the UTF-8 path would have broken
+        # this function's promise never to raise.
+        content = extract_text(file_path, ext, CONTENT_INDEX_MAX_BYTES)
+        if not content:
+            return False
+    elif ext in CONTENT_INDEXED_EXTENSIONS:
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="strict") as handle:
+                content = handle.read(CONTENT_INDEX_MAX_BYTES)
+        except (UnicodeDecodeError, OSError, ValueError):
+            # A file with a text extension that does not decode is not text.
+            # Left out rather than stored as replacement characters, which would
+            # match nothing a user would ever search for.
+            return False
+        if not content.strip():
+            return False
+    else:
         return False
     try:
         upsert_file_content(file_path, content)
@@ -78,6 +92,43 @@ def index_file_content(file_path: str, ext: str) -> bool:
         logger.warning("Could not index the content of %s", file_path, exc_info=True)
         return False
     return True
+
+
+def backfill_binary_content() -> int:
+    """Extract text from PDFs and DOCX files already known to the index.
+
+    Deliberately a separate pass, run *after* the watcher starts, because the
+    startup thread is sequential: walk, then watch. Parsing PDFs inline would
+    put a drive with a few thousand of them between Lithe starting and the
+    watcher existing -- and every file change during that window is lost, with
+    nothing to show it happened. The index is usable immediately and the
+    document text fills in behind it.
+
+    Reuses paths_missing_content, which is one query over every path rather than
+    one query per file, and which already exists for exactly this shape of
+    problem.
+    """
+    known = list(get_all_files_mtime().keys())
+    candidates = [
+        path for path in known
+        if os.path.splitext(path)[1].lower() in BINARY_CONTENT_EXTENSIONS
+    ]
+    pending = paths_missing_content(candidates)
+    if not pending:
+        return 0
+
+    logger.info("Extracting text from %d document(s) in the background.", len(pending))
+    extracted = 0
+    for path in pending:
+        ext = os.path.splitext(path)[1].lower()
+        if index_file_content(path, ext):
+            extracted += 1
+            # The log drawer is the only place a user can see this happening;
+            # without it a long backfill looks like nothing at all.
+            broadcast_event("indexed", path)
+
+    logger.info("Extracted text from %d of %d document(s).", extracted, len(pending))
+    return extracted
 
 
 def walk_and_index() -> int:
@@ -177,7 +228,10 @@ def walk_and_index_path(
                                 # never backfills: reconciliation skips every
                                 # file it already knows, so content search stays
                                 # empty until something edits each file.
-                                if file_path in (_backfill or ()):
+                                if (
+                                    file_path in (_backfill or ())
+                                    and ext in CONTENT_INDEXED_EXTENSIONS
+                                ):
                                     if index_file_content(file_path, ext):
                                         counters["content"] = counters.get("content", 0) + 1
                                 continue
@@ -195,7 +249,12 @@ def walk_and_index_path(
                     batch.append(file_record)
                     total_indexed += 1
                     counters["new"] += 1
-                    if index_file_content(file_path, ext):
+                    # Text formats only. Documents are deliberately left to
+                    # backfill_binary_content, which runs after the watcher has
+                    # started -- parsing them here would put a drive's worth of
+                    # PDFs between start-up and the watcher existing, losing
+                    # every file change made in that window.
+                    if ext in CONTENT_INDEXED_EXTENSIONS and index_file_content(file_path, ext):
                         counters["content"] = counters.get("content", 0) + 1
                     
                     if is_root_call:
