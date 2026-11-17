@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from src.backend.brain import chat
-from src.backend.indexer import walk_and_index
+from src.backend.indexer import walk_and_index, backfill_binary_content
 from src.backend.watcher import start_watcher
 from src.backend.logger import logger
 
@@ -48,7 +48,13 @@ def auto_index_and_watch():
             from src.backend.changelog import generate_changelog
             generate_changelog()
             walk_and_index()
+            # The watcher starts before document extraction, not after. This
+            # thread is sequential, and parsing a drive's worth of PDFs between
+            # the walk and the watcher would lose every file change made during
+            # that window, silently. Metadata and text files are searchable
+            # immediately; PDF and DOCX text fills in behind the watcher.
             start_watcher()
+            backfill_binary_content()
         except Exception as e:
             logger.exception(f"Fatal error during background startup tasks: {e}")
 
@@ -346,6 +352,7 @@ async def get_llm_config():
         "gemini_api_key_masked": f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "",
         "ollama_url": config.OLLAMA_URL,
         "ollama_model": config.OLLAMA_MODEL,
+        "ollama_timeout": config.OLLAMA_TIMEOUT,
     }
 
 
@@ -353,6 +360,7 @@ class LLMConfigRequest(BaseModel):
     api_key: str = ""
     ollama_url: str = ""
     ollama_model: str = ""
+    ollama_timeout: int = 0
 
 
 @app.post("/api/config/llm")
@@ -361,13 +369,21 @@ async def set_llm_config(request: LLMConfigRequest):
     from src.backend import config
     import src.backend.brain as brain
 
-    config.update_llm_config(request.api_key, request.ollama_url, request.ollama_model)
+    config.update_llm_config(
+        request.api_key,
+        request.ollama_url,
+        request.ollama_model,
+        request.ollama_timeout,
+    )
 
-    # brain imported OLLAMA_URL/OLLAMA_MODEL by value at import time, so updating
-    # config's globals alone would not reach the running brain. Rebind them here
-    # (and rebuild the client when a new key arrives).
+    # brain imported OLLAMA_URL/OLLAMA_MODEL/OLLAMA_TIMEOUT by value at import
+    # time, so updating config's globals alone would not reach the running
+    # brain. Rebind them here (and rebuild the client when a new key arrives).
+    # Every read of these is inside a function body, so the next request picks
+    # the new value up -- no restart.
     brain.OLLAMA_URL = config.OLLAMA_URL
     brain.OLLAMA_MODEL = config.OLLAMA_MODEL
+    brain.OLLAMA_TIMEOUT = config.OLLAMA_TIMEOUT
     if request.api_key.strip():
         from google import genai
         brain._client = genai.Client(api_key=config.GEMINI_API_KEY)
@@ -490,10 +506,14 @@ async def search_endpoint(q: str):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/undo/history")
-async def undo_history_endpoint():
-    """Returns recent reversible actions."""
+async def undo_history_endpoint(limit: int = 10, mutating_only: bool = True):
+    """Recent actions for the undo stack — mutations only by default.
+
+    `limit` defaults to 10 rather than the old 5 so the popover can show a
+    usable stack; the audit export is the place to go for everything.
+    """
     from src.backend.memory import get_action_history
-    return {"history": get_action_history()}
+    return {"history": get_action_history(limit=max(1, min(100, limit)), mutating_only=mutating_only)}
 
 from pydantic import BaseModel
 class UndoRequest(BaseModel):

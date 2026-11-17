@@ -19,7 +19,7 @@ function OnboardingWizard(): JSX.Element {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--bg-panel)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--panel)' }}>
       <img src={litheLogo} alt="Lithe Logo" style={{ width: 120, marginBottom: '2rem' }} />
       <h1 style={{ color: 'var(--text-primary)', marginBottom: '1rem', fontWeight: 600 }}>Welcome to Lithe</h1>
       <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', textAlign: 'center', maxWidth: 400 }}>

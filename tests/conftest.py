@@ -106,6 +106,10 @@ def no_real_indexing(request, monkeypatch):
 
     monkeypatch.setattr(server, "walk_and_index", lambda *a, **k: 0)
     monkeypatch.setattr(server, "start_watcher", lambda *a, **k: None)
+    # Every startup step, not just the ones that existed when this was written.
+    # backfill_binary_content reads and parses documents, so leaving it out
+    # would have the suite extracting text from the developer's real files.
+    monkeypatch.setattr(server, "backfill_binary_content", lambda *a, **k: 0)
     yield
 
 

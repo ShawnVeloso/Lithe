@@ -35,6 +35,13 @@ hiddenimports = [
 # inline_chart both call pd.read_excel on .xlsx input.
 hiddenimports += ['openpyxl']
 
+# extractors.py imports pypdf inside the function rather than at module scope,
+# so a session that never opens a PDF never pays for it. That also means the
+# import graph has no edge to pypdf at all, and collect_submodules below sweeps
+# in project modules only -- without this line PDF indexing works perfectly in
+# development and silently indexes nothing in the packaged build.
+hiddenimports += ['pypdf']
+
 # Several backend modules are imported lazily inside request handlers, which
 # keeps startup fast but hides them from the dependency graph.
 hiddenimports += collect_submodules('src.backend')

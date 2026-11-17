@@ -53,6 +53,8 @@ from src.backend.watch_rules import (
 )
 import os
 import json
+import queue
+import threading
 import time
 
 # Global state for pausing execution during tool confirmation
@@ -519,7 +521,78 @@ OLLAMA_TOOLS_SCHEMA = [
 ]
 
 
-def _ollama_drive_tool_rounds(messages, tool_map, rounds: int = 0):
+def _ollama_post(payload: dict, on_token=None) -> dict:
+    """One /api/chat round trip, returning Ollama's `message` dict either way.
+
+    The two modes exist so streaming can be confined to `chat_stream` without
+    the tool loop, the transcript, or the evaluation harness ever seeing a
+    different shape. `on_token is None` is the blocking path, byte-identical to
+    what `chat()` has always sent -- that matters because the recorder in
+    tests/eval and the tool loop both read `resp.json()["message"]`, and an
+    NDJSON body would make both raise, silently zeroing every tool case.
+
+    With a callback, the same request is made with `stream: true` and the
+    chunks are reassembled into that identical dict, forwarding text as it
+    arrives.
+
+    One chunk is always held back before forwarding. Ollama announces
+    `tool_calls` in its first message chunk, so the one-chunk lookahead is what
+    stops a turn that turns out to be a tool call from typing half a sentence
+    at the user first and then replacing it with a confirmation card.
+    """
+    url = f"{OLLAMA_URL}/api/chat"
+
+    if on_token is None:
+        resp = httpx.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json().get("message", {})
+
+    message: dict = {"role": "assistant", "content": ""}
+    pending: str | None = None
+    saw_tool_call = False
+
+    with httpx.stream(
+        "POST", url, json=dict(payload, stream=True), timeout=OLLAMA_TIMEOUT
+    ) as resp:
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                chunk = json.loads(line)
+            except json.JSONDecodeError:
+                # A stream cut mid-line is a truncated answer, not a crash:
+                # whatever arrived intact is still worth returning.
+                logger.warning("Discarding a partial NDJSON line from Ollama.")
+                continue
+
+            part = chunk.get("message") or {}
+            if part.get("role"):
+                message["role"] = part["role"]
+
+            calls = part.get("tool_calls")
+            if calls:
+                saw_tool_call = True
+                message.setdefault("tool_calls", []).extend(calls)
+
+            content = part.get("content") or ""
+            if not content:
+                continue
+            message["content"] += content
+            if saw_tool_call:
+                continue
+            if pending is not None:
+                on_token(pending)
+            pending = content
+
+    if pending is not None and not saw_tool_call:
+        on_token(pending)
+
+    return message
+
+
+def _ollama_drive_tool_rounds(messages, tool_map, rounds: int = 0, on_token=None):
     """Keep calling Ollama until it answers in text or the budget runs out.
 
     The counterpart to _drive_tool_rounds on the Gemini side, and extracted
@@ -552,11 +625,7 @@ def _ollama_drive_tool_rounds(messages, tool_map, rounds: int = 0):
         if OLLAMA_OPTIONS:
             payload["options"] = dict(OLLAMA_OPTIONS)
 
-        resp = httpx.post(
-            f"{OLLAMA_URL}/api/chat", json=payload, timeout=OLLAMA_TIMEOUT
-        )
-        resp.raise_for_status()
-        message = resp.json().get("message", {})
+        message = _ollama_post(payload, on_token)
         calls = message.get("tool_calls") or []
 
         # `not offer_tools` matters as much as `not calls`: on the final
@@ -665,6 +734,7 @@ def _ollama_chat(
     user_message: str,
     tool_map: dict | None = None,
     history: list | None = None,
+    on_token=None,
 ) -> str | dict:
     """Send a prompt to the local Ollama instance and return its response.
 
@@ -685,6 +755,9 @@ def _ollama_chat(
         history:       Budget-trimmed transcript to replay. Omitted by one-off
                        callers such as watch-rule summarisation, which have no
                        conversation to carry.
+        on_token:      Called with each chunk of text as it arrives. Only
+                       `chat_stream` passes one; `chat()` does not, so the
+                       measured payload stays `stream: False`.
 
     Returns:
         The model's text response, or a dict containing a tool_proposal,
@@ -722,7 +795,7 @@ def _ollama_chat(
         messages.append({"role": "user", "content": user_message})
 
     try:
-        return _ollama_drive_tool_rounds(messages, tool_map)
+        return _ollama_drive_tool_rounds(messages, tool_map, on_token=on_token)
 
     except httpx.TimeoutException:
         return (
@@ -731,6 +804,50 @@ def _ollama_chat(
         )
     except Exception as e:
         return f"Error: Ollama fallback failed — {type(e).__name__}: {e}"
+
+_STREAM_END = object()
+
+
+def _ollama_chat_streaming(system_prompt, user_message, tool_map, history):
+    """`_ollama_chat` on a worker thread, yielding its tokens as they arrive.
+
+    `_ollama_chat` is synchronous and has to stay that way -- `chat()`, the
+    watch-rule summariser and the evaluation harness all call it directly. So
+    the streaming caller runs it on a thread and drains a queue, rather than
+    the loop being rewritten as a generator and every other caller having to
+    exhaust it.
+
+    Yields `("token", text)` per chunk, then exactly one `("result", value)`
+    carrying whatever `_ollama_chat` returned -- an answer string, an error
+    string, or a tool_proposal dict.
+    """
+    q: queue.Queue = queue.Queue()
+
+    def run():
+        try:
+            result = _ollama_chat(
+                system_prompt, user_message, tool_map,
+                history=history, on_token=q.put,
+            )
+        except Exception as e:
+            # _ollama_chat catches its own failures, so reaching here means a
+            # defect. It still has to arrive as a result: an unraised
+            # exception on a worker thread would hang the drain forever.
+            logger.exception("Ollama streaming worker failed: %s", e)
+            result = f"Error: Ollama fallback failed — {type(e).__name__}: {e}"
+        q.put((_STREAM_END, result))
+
+    worker = threading.Thread(target=run, name="ollama-stream", daemon=True)
+    worker.start()
+
+    while True:
+        item = q.get()
+        if isinstance(item, tuple) and len(item) == 2 and item[0] is _STREAM_END:
+            worker.join(timeout=5)
+            yield ("result", item[1])
+            return
+        yield ("token", item)
+
 
 # Global state for safeword
 session_safeword_active = False
@@ -1540,10 +1657,17 @@ def chat_stream(user_message: str):
         )
         # The transcript already ends with this turn, so the fallback replays
         # it rather than being handed a lone message with no context.
-        ollama_response = _ollama_chat(
-            system_prompt, cleaned_message, tool_map, history=trim_history(_chat_history)
-        )
-        
+        emitted = ""
+        ollama_response: str | dict = ""
+        for kind, value in _ollama_chat_streaming(
+            system_prompt, cleaned_message, tool_map, trim_history(_chat_history)
+        ):
+            if kind == "token":
+                emitted += value
+                yield {"type": "token", "content": value}
+            else:
+                ollama_response = value
+
         if isinstance(ollama_response, dict) and "tool_proposal" in ollama_response:
             yield {"type": "tool_proposal", "proposal": ollama_response["tool_proposal"]}
             return
@@ -1563,8 +1687,15 @@ def chat_stream(user_message: str):
         )
         _chat_history.append(model_content)
         _save_content(model_content)
-        # Yield entire Ollama response as a single token chunk
-        yield {"type": "token", "content": ollama_response}
+        # Only what streaming did not already deliver. A turn that never
+        # streamed (an error string, or the hallucination guard replacing the
+        # answer outright) still arrives whole.
+        if emitted and ollama_response.startswith(emitted):
+            remainder = ollama_response[len(emitted):]
+        else:
+            remainder = ollama_response
+        if remainder:
+            yield {"type": "token", "content": remainder}
         yield {"type": "done", "tokens": last_token_counts}
 
     except Exception as e:
