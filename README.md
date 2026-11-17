@@ -79,4 +79,4 @@ Latest recorded result: 22 of 22 cases on qwen2.5 (seed 20260905, Ollama 0.34.4)
 
 ## License
 
-This project is open-sourced under the MIT License.
+This project is open-sourced under the [MIT License](LICENSE).
