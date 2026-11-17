@@ -327,7 +327,85 @@ def search_index(keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
 
     Each row carries `match`, so a caller can label where the hit came from;
     only content rows carry `excerpt`.
+
+    When the whole query matches nothing, it is retried word by word -- see
+    `_search_any_word`. Rows from that retry carry `partial: True`.
     """
+    rows = _search_phrase(keyword, limit)
+    if rows:
+        return rows
+    return _search_any_word(keyword, limit)
+
+
+# Words that say what kind of thing is wanted rather than which one. Only
+# consulted by the word-by-word retry, where "file" would otherwise match
+# every name containing "profile" or "bigfile" as strongly as the one word
+# that identifies the file.
+_SEARCH_NOISE_WORDS = {
+    "the", "and", "for", "with", "about", "from", "into", "that", "this",
+    "what", "which", "file", "files", "folder", "document", "inside",
+}
+
+
+def _search_words(keyword: str) -> List[str]:
+    """The distinct words of a query worth searching for on their own.
+
+    Split on whitespace only, so `ZEPHYR-441` and `sales_q3` stay whole: they
+    are identifiers, and matching either half would be a different search.
+    """
+    words: List[str] = []
+    for raw in keyword.split():
+        word = raw.strip(".,;:!?()[]{}\"'`")
+        if len(word) < 3 or word.lower() in _SEARCH_NOISE_WORDS:
+            continue
+        if word.lower() not in (w.lower() for w in words):
+            words.append(word)
+    return words
+
+
+def _search_any_word(keyword: str, limit: int) -> List[Dict[str, Any]]:
+    """Files matching some of the query's words, those matching most first.
+
+    Search matches a query as one phrase, which is right when a user types
+    `ZEPHYR-441` and wrong when a model writes a description of what it wants.
+    Measured: qwen2.5, told that search reads file contents, asked for
+    "meeting code word" -- and notes_meeting.md, which holds the code word,
+    matched neither as a name nor as a phrase, so a two-step task failed at
+    step one on every repeat.
+
+    Only reached when the phrase found nothing, so a query that works today
+    returns exactly what it did. Ranked by how many distinct words a file
+    matches, in its name or its text; a name match wins a tie, as it does for
+    the phrase. A single word has nothing to retry.
+    """
+    words = _search_words(keyword)
+    if not words or words == [keyword.strip()]:
+        return []
+
+    rows: Dict[str, Dict[str, Any]] = {}
+    hits: Dict[str, set] = {}
+    # A wider net per word than the final limit: a file matching every word
+    # should not lose to twenty that each match one common word.
+    per_word = limit * 5
+    for word in words:
+        for row in _search_phrase(word, per_word):
+            kept = rows.setdefault(row["path"], dict(row))
+            hits.setdefault(row["path"], set()).add(word.lower())
+            if row["match"] == "name":
+                kept["match"] = "name"
+            # Unlike a phrase hit, a passage matching a *different* word than
+            # the name did is new information -- often the answer itself.
+            if row.get("excerpt") and not kept.get("excerpt"):
+                kept["excerpt"] = row["excerpt"]
+
+    ranked = sorted(
+        rows, key=lambda path: (-len(hits[path]), rows[path]["match"] != "name")
+    )
+    return [dict(rows[path], partial=True) for path in ranked[:limit]]
+
+
+def _search_phrase(keyword: str, limit: int) -> List[Dict[str, Any]]:
+    """The whole query as one term: name matches, then content matches."""
     by_name = search_files_by_name(keyword, limit)
     for row in by_name:
         row["match"] = "name"

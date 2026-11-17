@@ -54,9 +54,35 @@ def pytest_collection_modifyitems(config, items):
         skip_all(f"LITHE_EVAL_ENGINE={ENGINE!r} is not one of: ollama, gemini")
         return
 
+    if ENGINE == "ollama":
+        unpinned = _unpinned_model_error()
+        if unpinned:
+            raise pytest.UsageError(unpinned)
+
     reason = _ollama_unusable_reason() if ENGINE == "ollama" else _gemini_unusable_reason()
     if reason:
         skip_all(reason)
+
+
+def _unpinned_model_error():
+    """Why the run must not start, if nobody named the model to score.
+
+    With OLLAMA_MODEL unset, Lithe settles on the first preference that happens
+    to be installed -- right for a user, and wrong for an instrument: the same
+    command would score qwen2.5 on one machine and llama3.2 on the next, and the
+    two numbers would look comparable. A failure rather than a skip, because a
+    skipped suite reads as "nothing to report" and invites the command to be
+    run again unchanged.
+    """
+    from src.backend import config as lithe_config
+
+    if lithe_config.OLLAMA_MODEL_EXPLICIT:
+        return None
+    return (
+        "OLLAMA_MODEL is not set, so the scored model would depend on what is "
+        "installed. Name it: "
+        "`LITHE_EVAL=1 OLLAMA_MODEL=qwen2.5 python -m pytest -m eval`."
+    )
 
 
 def _ollama_unusable_reason():

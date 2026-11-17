@@ -15,11 +15,13 @@ import difflib
 from google.genai import types, errors
 from google import genai
 
+from src.backend import config as lithe_config
 from src.backend.config import (
     GEMINI_API_KEY,
     GEMINI_MODEL,
     OLLAMA_URL,
     OLLAMA_MODEL,
+    OLLAMA_MODEL_PREFERENCE,
     OLLAMA_TIMEOUT,
 )
 from src.backend.prompts.system_prompt import (
@@ -359,6 +361,45 @@ def _model_is_pulled(model: str, available: list[str]) -> bool:
     return wanted in available or model in available
 
 
+def _preferred_installed_model(available: list[str]) -> str:
+    """The first of OLLAMA_MODEL_PREFERENCE this machine has pulled.
+
+    Returned in Ollama's own spelling (`llama3.2:latest`), so the Settings
+    picker finds it among the installed tags instead of opening on "custom".
+    With none of them pulled the first preference stands, which is what makes
+    the fallback's error say `ollama pull qwen2.5` rather than name a model
+    nobody asked for.
+    """
+    for name in OLLAMA_MODEL_PREFERENCE:
+        if _model_is_pulled(name, available):
+            return name if name in available else f"{name}:latest"
+    return OLLAMA_MODEL_PREFERENCE[0]
+
+
+def _settle_default_model(available: list[str] | None) -> None:
+    """Point OLLAMA_MODEL at the best installed model, unless the user chose one.
+
+    Called wherever Lithe has just learned what is installed, rather than once
+    at startup: Ollama is often started after Lithe, and a default resolved
+    while it was down would otherwise stay "qwen2.5" for the whole session on a
+    machine with llama3.2 pulled and working. An unreachable Ollama changes
+    nothing -- there is nothing to learn from it.
+
+    Never reached by the capability evaluation, which refuses to run on a model
+    it did not name: a score that depends on what happens to be installed is
+    the instrument lying.
+    """
+    global OLLAMA_MODEL
+    if lithe_config.OLLAMA_MODEL_EXPLICIT or available is None:
+        return
+    OLLAMA_MODEL = lithe_config.OLLAMA_MODEL = _preferred_installed_model(available)
+
+
+def settle_default_model_at_startup() -> None:
+    """One /api/tags read at boot, so Settings shows the real default at once."""
+    _settle_default_model(_ollama_models())
+
+
 def _check_ollama_available() -> bool:
     """True only if Ollama can actually serve OLLAMA_MODEL.
 
@@ -369,6 +410,7 @@ def _check_ollama_available() -> bool:
     that says what to install.
     """
     available = _ollama_models()
+    _settle_default_model(available)
     return available is not None and _model_is_pulled(OLLAMA_MODEL, available)
 
 # Both halves of a search share one cap, so the count in the result text and
@@ -796,6 +838,7 @@ def _ollama_chat(
             "Gemini failed (see above), and Ollama is not running at "
             f"{OLLAMA_URL}. Start it with `ollama serve`."
         )
+    _settle_default_model(available)
     if not _model_is_pulled(OLLAMA_MODEL, available):
         # Naming what *is* installed turns a dead end into one command.
         installed = ", ".join(sorted(available)) or "none"
@@ -1069,10 +1112,16 @@ def _build_tool_functions():
             if len(results) >= SEARCH_RESULT_LIMIT
             else ""
         )
-        return (
-            f"Found {len(results)} file(s) matching '{keyword}'{capped}:\n"
-            + "\n".join(lines)
-        )
+        if results[0].get("partial"):
+            # Said outright: a list of near misses presented as matches would
+            # invite the model to treat the first one as the answer.
+            header = (
+                f"Nothing matches '{keyword}' as a whole. Found {len(results)} "
+                f"file(s) matching some of its words, most matched first{capped}:"
+            )
+        else:
+            header = f"Found {len(results)} file(s) matching '{keyword}'{capped}:"
+        return header + "\n" + "\n".join(lines)
 
     def read_file(path: str) -> str:
         """Reads the text contents of a file so you can answer questions about it.

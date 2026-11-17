@@ -110,6 +110,35 @@ def no_real_indexing(request, monkeypatch):
     # backfill_binary_content reads and parses documents, so leaving it out
     # would have the suite extracting text from the developer's real files.
     monkeypatch.setattr(server, "backfill_binary_content", lambda *a, **k: 0)
+    monkeypatch.setattr(server, "settle_default_model_at_startup", lambda *a, **k: None)
+    # Imported inside the startup thread, so patched on its own module. It
+    # rewrites CHANGELOG.md from docs/agent-logs/INDEX.md in the working tree,
+    # and every suite run was silently discarding uncommitted edits to it.
+    from src.backend import changelog
+    monkeypatch.setattr(changelog, "generate_changelog", lambda *a, **k: None)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def explicit_ollama_model(monkeypatch):
+    """Treat the configured Ollama model as one the user chose.
+
+    Without this, whether brain may re-point OLLAMA_MODEL at an installed model
+    depends on whether the developer's .env happens to name one -- and a test
+    that sets OLLAMA_MODEL to "llama3.1" to prove a missing model is reported
+    would, on a clean machine, watch it silently become "llama3.2:latest".
+    Tests of the default itself opt out by setting the flag back to False.
+    Both OLLAMA_MODEL copies are saved too, so a test that does let it move
+    cannot leak the result into the next one.
+    """
+    monkeypatch.setattr(config, "OLLAMA_MODEL_EXPLICIT", True)
+    monkeypatch.setattr(config, "OLLAMA_MODEL", config.OLLAMA_MODEL)
+    try:
+        from src.backend import brain
+    except Exception:
+        yield   # as in reset_brain_state: brain-free tests must still run
+        return
+    monkeypatch.setattr(brain, "OLLAMA_MODEL", brain.OLLAMA_MODEL)
     yield
 
 

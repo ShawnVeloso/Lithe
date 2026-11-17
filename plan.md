@@ -1,8 +1,10 @@
-> **STATUS — updated 2026-09-11.** Branch `feat/safety-prompts-and-list-directory`, stacked
-> on `feat/binary-content-extraction` (PR pending). Suite 302 passing, 1 xfailed.
-> **M1: 81% (21 scored, llama3.2, seed 20260905).** A same-day rerun of the pre-M1 payload
-> scored **75% (16)** — the recorded 81% baseline did not reproduce, so M1 is compared
-> against 75%, not 81%. See CHANGELOG 2026-09-11.
+> **STATUS — updated 2026-09-26.** Branch `feat/qwen-default` (#22), stacked on #21 (M1) → #20
+> (phases 2–4) → `main`. Suite 319 passing, 1 xfailed.
+> **M1: 81% (21 scored, llama3.2, seed 20260905)**, compared against a non-reproducing 75%.
+> **M2: 91% (22 scored, qwen2.5, seed 20260905)** — a new baseline, not comparable to either.
+> It surfaced two Lithe-owned failures, then fixed (search retries a phrase word by word;
+> `SAFETY_RULES` says folders inside a drive are fine): **100% (22), qwen2.5**, same seed.
+> See CHANGELOG 2026-09-26.
 >
 > | Phase | State | Landed as |
 > |---|---|---|
@@ -11,9 +13,9 @@
 > | 2 — PDF + DOCX extraction | **done** | `feat/binary-content-extraction` |
 > | 3 — Ollama timeout + streaming | **done** | `feat/binary-content-extraction` |
 > | 4 — frontend pass | **done** | `feat/binary-content-extraction` |
-> | M1 — safety, prompts, `list_directory` | **done** | this branch — *81%, 21 cases* |
-> | M2 — qwen2.5 default | **next** | *second eval run* |
-> | 7 — packaging | todo | *must be last* |
+> | M1 — safety, prompts, `list_directory` | **done** | #21 — *81%, 21 cases* |
+> | M2 — qwen2.5 default | **done** | #22 — *91% → 100% after two fixes, 22 cases* |
+> | 7 — packaging | **next** | *must be last* |
 >
 > Finished plans are archived in [`docs/plans/`](docs/plans/).
 

@@ -12,11 +12,10 @@
 // that left 5 of 9 tools unreachable -- the copies agree right up until one is
 // edited.
 //
-// It has to include the shipped default: llama3.2 is what OLLAMA_MODEL falls
-// back to in config.py and what the capability evaluation is scored on, and the
-// badge was once telling every default user their tools were dead. Note that
-// llama3 (no point release) is deliberately absent -- tool calling arrived with
-// llama3.1.
+// It has to include every model the default can settle on -- qwen2.5, llama3.1
+// and llama3.2, config.OLLAMA_MODEL_PREFERENCE -- because the badge was once
+// telling every default user their tools were dead. Note that llama3 (no point
+// release) is deliberately absent -- tool calling arrived with llama3.1.
 // ---------------------------------------------------------------------------
 export const TOOL_CAPABLE_OLLAMA_MODELS = [
   'llama3.1',

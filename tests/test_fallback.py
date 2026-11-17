@@ -229,3 +229,130 @@ def test_an_unreachable_ollama_reports_no_embedding_models(monkeypatch):
     got = models_client(monkeypatch, None).get("/api/config/ollama-models").json()
     assert got["reachable"] is False
     assert got["embedding_only"] == []
+
+
+# --- The shipped default ----------------------------------------------------
+#
+# OLLAMA_MODEL used to default to the literal "llama3.2". It now prefers
+# qwen2.5, and the risk was never the model but the upgrade path: a user who
+# never saved a model in Settings, with llama3.2 pulled and working, must not
+# wake up configured for a 4.7GB model they do not have. So an unnamed model
+# settles on the first preference that is actually installed.
+
+
+@pytest.fixture
+def unset_model(monkeypatch):
+    """OLLAMA_MODEL as config computes it when nobody named one."""
+    from src.backend import config
+
+    monkeypatch.setattr(config, "OLLAMA_MODEL_EXPLICIT", False)
+    for module in (config, brain):
+        monkeypatch.setattr(module, "OLLAMA_MODEL", config.OLLAMA_MODEL_PREFERENCE[0])
+
+
+@pytest.mark.parametrize(
+    "installed,expected",
+    [
+        (["llama3.2:latest"], "llama3.2:latest"),   # the upgrade path: keep what works
+        (["llama3.2:latest", "qwen2.5:latest"], "qwen2.5:latest"),
+        (["llama3.2:latest", "llama3.1:latest"], "llama3.1:latest"),  # our order, not Ollama's
+        (["llama3:latest", "all-minilm:latest"], "qwen2.5"),  # none preferred: say what to pull
+        ([], "qwen2.5"),
+        (None, "qwen2.5"),                          # unreachable
+    ],
+)
+def test_an_unnamed_model_settles_on_the_best_one_installed(
+    monkeypatch, unset_model, installed, expected
+):
+    from src.backend import config
+
+    if installed is None:
+        unreachable(monkeypatch)
+    else:
+        install_tags(monkeypatch, installed)
+
+    brain.settle_default_model_at_startup()
+
+    assert brain.OLLAMA_MODEL == expected
+    assert config.OLLAMA_MODEL == expected   # the copy Settings reads
+
+
+def test_a_named_model_wins_verbatim(monkeypatch):
+    """Even one that is not installed, while a preferred one is.
+
+    Being told `ollama pull llama3.1` is the user's configuration talking;
+    quietly answering with a different model would be Lithe overruling it.
+    """
+    monkeypatch.setattr(brain, "OLLAMA_MODEL", "llama3.1")   # explicit, via conftest
+    install_tags(monkeypatch, ["qwen2.5:latest", "llama3.2:latest"])
+
+    brain.settle_default_model_at_startup()
+
+    assert brain.OLLAMA_MODEL == "llama3.1"
+    assert brain._check_ollama_available() is False
+
+
+def test_a_default_settled_while_ollama_was_down_recovers(monkeypatch, unset_model):
+    """Ollama is often started after Lithe.
+
+    Resolving once at boot would leave this machine -- llama3.2 pulled and
+    working -- telling the user to pull qwen2.5 for the whole session.
+    """
+    from tests.support.fake_ollama import ScriptedOllama
+
+    unreachable(monkeypatch)
+    brain.settle_default_model_at_startup()
+    assert brain.OLLAMA_MODEL == "qwen2.5"
+
+    ollama = ScriptedOllama(model="llama3.2").install(monkeypatch)
+    reply = brain._ollama_chat("system", "hello", tool_map={})
+
+    assert reply == "Done."
+    assert ollama.requests[0]["model"] == "llama3.2:latest"
+
+
+def test_the_listing_reports_the_settled_default(monkeypatch, unset_model):
+    """Settings must show the model the fallback will use, not the preference.
+
+    Returned in Ollama's spelling so the picker finds it among the installed
+    tags instead of opening on "custom".
+    """
+    client = models_client(
+        monkeypatch, ["llama3.2:latest", "all-minilm:latest"], current="qwen2.5"
+    )
+    got = client.get("/api/config/ollama-models").json()
+
+    assert got["current"] == "llama3.2:latest"
+    assert got["current"] in got["installed"]
+    assert got["current_installed"] is True
+
+
+def test_saving_a_model_in_settings_pins_it(tmp_path, monkeypatch, unset_model):
+    """And saving anything else does not.
+
+    A saved model is in the .env, so it would be explicit after a restart
+    anyway; treating it as still-unnamed until then would let the next
+    /api/tags read quietly undo the user's choice.
+    """
+    from fastapi.testclient import TestClient
+    from src.backend import config
+    from src.backend.server import app
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("", encoding="utf-8")
+    monkeypatch.setattr(config, "_ACTIVE_ENV_PATH", env_file)
+    monkeypatch.setattr(config, "OLLAMA_TIMEOUT", 150)
+    monkeypatch.setattr(brain, "OLLAMA_TIMEOUT", 150)
+    monkeypatch.setattr(config, "NEEDS_ONBOARDING", config.NEEDS_ONBOARDING)
+    client = TestClient(app)
+
+    client.post("/api/config/llm", json={"ollama_timeout": 200})
+    assert config.OLLAMA_MODEL_EXPLICIT is False
+    assert "OLLAMA_MODEL" not in env_file.read_text()
+
+    client.post("/api/config/llm", json={"ollama_model": "llama3.2"})
+    assert config.OLLAMA_MODEL_EXPLICIT is True
+
+    install_tags(monkeypatch, ["qwen2.5:latest", "llama3.2:latest"])
+    brain.settle_default_model_at_startup()
+    assert brain.OLLAMA_MODEL == "llama3.2"
