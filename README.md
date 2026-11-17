@@ -1,87 +1,82 @@
 <div align="center">
   <img src="src/frontend/resources/icon.png" alt="Lithe Logo" width="120" />
   <h1>Lithe</h1>
-  <p><strong>A privacy-first, local-RAG agentic coding assistant with a terminal-inspired HUD.</strong></p>
+  <p><strong>A local, permissioned AI assistant for your own files, with a terminal-style desktop UI.</strong></p>
 </div>
 
 ---
 
-**Lithe** is an intelligent, event-driven coding assistant designed to give LLMs continuous, real-time context about your codebase without compromising your privacy or data sovereignty. It watches your workspace, indexes your files into an ultra-fast SQLite memory graph, and executes coding tasks with explicit, diff-based user consent.
+Lithe is a desktop app that lets an LLM work with the files on your machine. It keeps an index of the folders you allow, gives the model tools to search, read and analyse those files, and asks you before any change to the file system. It uses Gemini when it can reach it and falls back to a local Ollama model when it cannot.
 
-Built for developers who want the power of AI coding assistants without the bloat, cloud dependencies, or loss of control over their file systems.
+## Features
 
-## ✨ Features
+- **Agent with tools.** The model can search, read (including PDF and DOCX contents), list folders, profile CSV/Excel data and draw charts. One turn runs a bounded tool loop (up to 5 rounds); when the budget runs out, the model must answer in text.
+- **You approve every change.** Writes, renames and deletes pause the agent and show a diff card in the UI. Nothing changes until you click **ACCEPT**. Calls aimed at a drive root or a protected path are refused before a card is shown.
+- **Local index that stays current.** Whitelisted folders are indexed into SQLite (WAL mode). A `watchdog` file watcher updates the index on every create, edit and delete, and startup compares modification times so unchanged files are not re-read.
+- **Content search.** An SQLite FTS5 index holds the text of supported files (first 100 KB each), so `search_files` finds files by what they contain as well as by name, and returns the matching passage. Retrieval is keyword-based; there are no embeddings.
+- **Offline fallback.** If Gemini is unreachable (network error, rate limit, API error), the same conversation continues on a local Ollama model with the same tools. The default is `qwen2.5`, or `llama3.1` / `llama3.2` if that is what you have pulled. Set `OLLAMA_MODEL` or pick one in Settings to choose.
+- **Terminal-style UI.** A three-pane Electron + React window with live telemetry for indexing and token use.
 
-- 🧠 **Event-Driven Memory (Local RAG)**
-  Lithe doesn't just read your files once. It uses a background watchdog to monitor your whitelisted directories. Whenever you edit, delete, or create a file, Lithe instantly updates its internal SQLite index, ensuring the AI's context is always perfectly synchronized with your real-world filesystem.
-  
-- 🛡️ **Interactive Tool Interceptor (Zero Accidental Destruction)**
-  Unlike other agents that silently mutate your files, Lithe intercepts all destructive LLM actions (writes, renames, deletes). It parses the changes and presents you with an interactive Diff Card in the UI, forcing the agent to pause until you explicitly click **ACCEPT** or **REJECT**. 
+## Architecture
 
-- ⚡ **Indexing Efficiency & Startup Reconciliation**
-  Lithe compares OS modification signatures against its database to avoid redundant I/O, meaning it boots instantly regardless of how many files you have indexed. Smart extension filtering blocks heavy binary bloatware (`.dll`, `.exe`, `.pak`) out of the box, keeping your LLM context pristine.
+| Layer | Technology |
+|---|---|
+| Desktop UI | Electron, React, TypeScript, Vite. The renderer has no Node access; all calls go through `contextBridge`. |
+| Backend | Python, FastAPI on `localhost:8321`. Electron starts it as a child process and waits for `/api/health`. |
+| Index | SQLite (WAL, FTS5), `watchdog` |
+| Models | Gemini API (`google-genai`), Ollama |
 
-- 🖥️ **Three-Pane Terminal HUD**
-  A stunning, custom-built React + Electron user interface heavily inspired by terminal aesthetics. Features an amber-on-near-black palette, monospace fonts, hairline borders, and live telemetry for both file indexing and LLM token usage.
+More detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/FEATURES.md`](docs/FEATURES.md).
 
-- 📴 **Offline Fallback (Ollama)**
-  Lithe is built with a robust model-routing architecture. If the primary Gemini API goes offline or you disconnect from the internet, Lithe will gracefully and automatically failover to your local Ollama models, allowing you to keep coding completely offline. It uses `qwen2.5` by default, or `llama3.1` / `llama3.2` if that is what you already have pulled; set `OLLAMA_MODEL` (or pick one in Settings) to choose explicitly.
-
-## 🏗️ Architecture Stack
-
-Lithe is split into two highly optimized layers communicating via REST and WebSockets:
-
-* **Frontend (Electron + React + Vite)**: A lightweight, sandboxed UI shell rendering the three-pane HUD. It communicates entirely through IPC and REST.
-* **Backend (Python + FastAPI)**: The true "brain" of the operation. It runs a Uvicorn server, manages the SQLite memory database, orchestrates the `watchdog` file observer, and handles all LLM API routing and tool execution.
-
-## 🚀 Getting Started
+## Getting started
 
 ### Prerequisites
-- Node.js (v18+)
-- Python (3.10+)
-- [Ollama](https://ollama.com/) (Optional, for offline fallback — `ollama pull qwen2.5`)
-- A Gemini API Key (Optional, for primary intelligence)
+- Node.js 18+
+- Python 3.10+
+- [Ollama](https://ollama.com/) (optional, for the offline fallback: `ollama pull qwen2.5`)
+- A Gemini API key (optional)
 
-### Installation
+### Install and run
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/yourusername/Lithe.git
-   cd Lithe
-   ```
+```bash
+git clone https://github.com/ShawnVeloso/Lithe.git
+cd Lithe
+pip install -r requirements.txt
+```
 
-2. **Set up the Python Backend:**
-   ```bash
-   # Navigate to the backend or root and install requirements (example)
-   pip install -r requirements.txt
-   ```
+Create a `.env` file in the repo root (see `.env.example`):
 
-3. **Set up your Environment Variables:**
-   Create a `.env` file in the root directory.
-   ```env
-   GEMINI_API_KEY=your_api_key_here
-   INDEX_WHITELIST=C:\path\to\your\project
-   ```
+```env
+GEMINI_API_KEY=your_api_key_here
+INDEX_WHITELIST=C:\path\to\your\project
+```
 
-4. **Install Frontend Dependencies:**
-   ```bash
-   cd src/frontend
-   npm install
-   ```
+Then start the app in development mode:
 
-5. **Run the App (Development Mode):**
-   ```bash
-   npm run dev
-   ```
-   *Note: Running `npm run dev` in the frontend directory will automatically spawn the Python FastAPI backend process.*
+```bash
+cd src/frontend
+npm install
+npm run dev
+```
 
-## 🗺️ Roadmap & Milestones
+`npm run dev` also starts the Python backend.
 
-Lithe is actively developed. Current major milestones include:
-- **Phase 3**: Efficiency & Context (Heuristic Graphs, Event-Driven Memory) - ✅ Complete
-- **Phase 4**: Visual Identity & Control (HUD Redesign, Tool Interception) - ✅ Complete
-- **Phase 5**: Performance (Indexing Efficiency Upgrades) - ✅ Complete
+## Tests and evaluation
 
-## 📜 License
+```bash
+python -m pytest
+```
 
-This project is open-sourced under the MIT License. Feel free to fork, modify, and build your own local agentic workflows!
+The unit suite (319 passing at v1.1.0) runs with no network and no real indexing.
+
+A separate, opt-in evaluation scores the agent end to end on 22 tool-use cases. It checks that the right tools ran and that their results actually reached the user, with seeded sampling so runs are reproducible:
+
+```bash
+LITHE_EVAL=1 OLLAMA_MODEL=qwen2.5 python -m pytest -m eval
+```
+
+Latest recorded result: 22 of 22 cases on qwen2.5 (seed 20260905, Ollama 0.34.4). See [`docs/TESTING.md`](docs/TESTING.md) and [`CHANGELOG.md`](CHANGELOG.md) for how the harness works and how the score has moved.
+
+## License
+
+This project is open-sourced under the MIT License.

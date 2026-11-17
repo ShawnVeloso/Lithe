@@ -45,7 +45,7 @@ def generate_changelog():
         # Generate CHANGELOG.md content
         changelog_lines = [
             "# Changelog\n",
-            "> Full historical changelog archived in [`docs/ARCHIVE_LOGS.md`](file:///d:/Lithe/docs/ARCHIVE_LOGS.md). Auto-generated recent entries from [`docs/agent-logs/INDEX.md`](file:///d:/Lithe/docs/agent-logs/INDEX.md).\n"
+            "> Full historical changelog archived in [`docs/ARCHIVE_LOGS.md`](docs/ARCHIVE_LOGS.md). Auto-generated recent entries from [`docs/agent-logs/INDEX.md`](docs/agent-logs/INDEX.md).\n"
         ]
         
         # Sort dates descending
