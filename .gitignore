@@ -70,3 +70,21 @@ build/
 
 # The evaluation trace is a diagnostic for one run, not a record (LITHE_EVAL_TRACE=1).
 eval-trace*.jsonl
+
+# --- Installed app files (Lithe was once installed into the repo folder) ---
+# Electron runtime and installer output. These are build results, not source.
+/$targetDir/
+/locales/
+/resources/
+/*.pak
+/*.dll
+/*.bin
+/icudtl.dat
+/vk_swiftshader_icd.json
+/LICENSE.electron.txt
+/LICENSES.chromium.html
+/uninstallerIcon.ico
+
+# --- Personal notes and raw tester dumps (kept locally, not published) ---
+/personal saved copies/
+/Bug testing/dump_testers/
